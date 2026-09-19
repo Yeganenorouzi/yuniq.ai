@@ -1,0 +1,557 @@
+/* =========================================================
+   Yuniq.ai — admin screens
+   Author: Yegane Norouzi <https://github.com/Yeganenorouzi>
+
+   Scoped under .yuniq-ai-admin-wrap so nothing leaks into the rest
+   of wp-admin. Brand colors match the public widget: the old admin CSS
+   used indigo #6366f1 while the widget used blue #263DFF, so the
+   settings screen and the thing it configured looked like two products.
+   ========================================================= */
+
+/* Vazirmatn, served from this plugin. Declared here as well as in
+   public.css because the two stylesheets never load on the same
+   request — admin screens would otherwise fall back to Tahoma. */
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-400.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-500.woff2") format("woff2");
+	font-weight: 500;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-600.woff2") format("woff2");
+	font-weight: 600;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-700.woff2") format("woff2");
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+.yuniq-ai-admin-wrap {
+	--yq-primary: #263dff;
+	--yq-primary-hover: #1b2fd6;
+	--yq-primary-soft: #eef1ff;
+	--yq-secondary: #111b55;
+
+	--yq-bg: #f6f7fb;
+	--yq-surface: #ffffff;
+	--yq-surface-alt: #f8fafc;
+	--yq-border: #e2e6ee;
+	--yq-text: #14161c;
+	--yq-text-muted: #61697c;
+	--yq-text-faint: #8e96a8;
+
+	--yq-success-bg: #dcfce7;
+	--yq-success-text: #14532d;
+	--yq-danger: #b42318;
+
+	--yq-radius: 12px;
+	--yq-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+	--yq-shadow-md: 0 4px 14px rgba(16, 24, 40, 0.07);
+
+	--yq-font: "Vazirmatn Local", "Vazirmatn", "IRANSans", "IRANYekan",
+		-apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+
+	max-width: 1080px;
+	margin: 20px 20px 40px 0;
+	font-family: var(--yq-font);
+	color: var(--yq-text);
+}
+
+.yuniq-ai-admin-wrap[dir="rtl"] {
+	margin: 20px 0 40px 20px;
+}
+
+.yuniq-ai-admin-wrap * {
+	box-sizing: border-box;
+}
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+.yuniq-ai-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	flex-wrap: wrap;
+	margin-bottom: 24px;
+	padding-bottom: 20px;
+	border-bottom: 1px solid var(--yq-border);
+}
+
+.yuniq-ai-header-brand {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	min-width: 0;
+}
+
+.yuniq-ai-logo {
+	width: 46px;
+	height: 46px;
+	flex-shrink: 0;
+	border-radius: var(--yq-radius);
+	background: var(--yq-primary);
+	color: #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 21px;
+	box-shadow: 0 4px 12px -2px rgba(38, 61, 255, 0.4);
+}
+
+.yuniq-ai-header h1 {
+	margin: 0 0 3px;
+	padding: 0;
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.3;
+	color: var(--yq-text);
+}
+
+.yuniq-ai-subtitle {
+	margin: 0;
+	font-size: 13px;
+	color: var(--yq-text-muted);
+	line-height: 1.5;
+}
+
+/* =========================================================
+   CARDS
+   ========================================================= */
+.yuniq-ai-card {
+	background: var(--yq-surface);
+	border: 1px solid var(--yq-border);
+	border-radius: var(--yq-radius);
+	padding: 22px 24px;
+	margin-bottom: 18px;
+	box-shadow: var(--yq-shadow-sm);
+}
+
+.yuniq-ai-card h2 {
+	margin: 0 0 6px;
+	padding: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--yq-text);
+}
+
+.yuniq-ai-card > h2 + .description {
+	margin-top: 0;
+	margin-bottom: 16px;
+}
+
+.yuniq-ai-card h2:only-child,
+.yuniq-ai-card h2 + * {
+	margin-top: 0;
+}
+
+.yuniq-ai-card .description {
+	color: var(--yq-text-muted);
+	font-size: 12.5px;
+	line-height: 1.6;
+}
+
+/* =========================================================
+   TABS
+   ========================================================= */
+.yuniq-ai-tabs {
+	margin-bottom: 18px;
+}
+
+.yuniq-ai-tab-nav {
+	display: flex;
+	gap: 2px;
+	padding: 0;
+	margin: 0 0 18px;
+	border-bottom: 1px solid var(--yq-border);
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.yuniq-ai-tab-nav::-webkit-scrollbar { display: none; }
+
+.yuniq-ai-tab-btn {
+	flex-shrink: 0;
+	background: none;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	padding: 11px 16px;
+	font-family: inherit;
+	font-size: 13.5px;
+	font-weight: 500;
+	color: var(--yq-text-muted);
+	cursor: pointer;
+	white-space: nowrap;
+	transition: color 0.15s, border-color 0.15s;
+}
+.yuniq-ai-tab-btn:hover { color: var(--yq-text); }
+.yuniq-ai-tab-btn.active {
+	color: var(--yq-primary);
+	border-bottom-color: var(--yq-primary);
+}
+.yuniq-ai-tab-btn:focus-visible {
+	outline: 2px solid var(--yq-primary);
+	outline-offset: -2px;
+	border-radius: 6px 6px 0 0;
+}
+
+.yuniq-ai-tab-panel { display: none; }
+.yuniq-ai-tab-panel.active { display: block; }
+
+/* =========================================================
+   TOGGLE SWITCH
+   ========================================================= */
+.yuniq-ai-switch {
+	position: relative;
+	display: inline-block;
+	width: 42px;
+	height: 24px;
+	vertical-align: middle;
+}
+.yuniq-ai-switch input {
+	position: absolute;
+	opacity: 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	cursor: pointer;
+}
+.yuniq-ai-switch .slider {
+	position: absolute;
+	inset: 0;
+	background: #cbd2de;
+	border-radius: 999px;
+	pointer-events: none;
+	transition: background 0.2s;
+}
+.yuniq-ai-switch .slider::before {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 18px;
+	height: 18px;
+	background: #fff;
+	border-radius: 50%;
+	box-shadow: var(--yq-shadow-sm);
+	transition: transform 0.2s;
+}
+.yuniq-ai-switch input:checked + .slider { background: var(--yq-primary); }
+.yuniq-ai-switch input:checked + .slider::before { transform: translateX(18px); }
+.yuniq-ai-switch input:focus-visible + .slider {
+	outline: 2px solid var(--yq-primary);
+	outline-offset: 2px;
+}
+
+/* =========================================================
+   STATS
+   ========================================================= */
+.yuniq-ai-stats-row {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 14px;
+	margin-bottom: 22px;
+}
+
+.yuniq-ai-stat-card {
+	background: var(--yq-surface);
+	border: 1px solid var(--yq-border);
+	border-radius: var(--yq-radius);
+	padding: 18px 16px;
+	text-align: center;
+	box-shadow: var(--yq-shadow-sm);
+}
+.yuniq-ai-stat-card .stat-value {
+	display: block;
+	font-size: 26px;
+	font-weight: 700;
+	line-height: 1.2;
+	color: var(--yq-primary);
+	margin-bottom: 4px;
+	font-variant-numeric: tabular-nums;
+}
+.yuniq-ai-stat-card .stat-label {
+	font-size: 12.5px;
+	color: var(--yq-text-muted);
+	line-height: 1.4;
+}
+
+/* =========================================================
+   PROGRESS
+   ========================================================= */
+.yuniq-ai-progress-bar {
+	height: 8px;
+	background: var(--yq-border);
+	border-radius: 999px;
+	overflow: hidden;
+}
+.yuniq-ai-progress-fill {
+	height: 100%;
+	width: 0;
+	border-radius: 999px;
+	background: var(--yq-primary);
+	transition: width 0.3s ease;
+}
+#yuniq-ai-crawl-message {
+	margin: 10px 0 0;
+	font-size: 13px;
+	color: var(--yq-text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================
+   QUICK ACTION EDITOR
+   ========================================================= */
+.yuniq-ai-qa-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 10px;
+	margin-bottom: 8px;
+	background: var(--yq-surface-alt);
+	border: 1px solid var(--yq-border);
+	border-radius: 10px;
+}
+.yuniq-ai-qa-row input[type="text"],
+.yuniq-ai-qa-row input[type="url"] {
+	flex: 1 1 140px;
+	min-width: 0;
+}
+.yuniq-ai-remove-qa {
+	color: var(--yq-danger);
+	border-color: #fecaca;
+	flex-shrink: 0;
+}
+
+/* =========================================================
+   TOPICS
+   ========================================================= */
+.yuniq-ai-topics-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.yuniq-ai-topics-list li {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--yq-border);
+}
+.yuniq-ai-topics-list li:last-child { border-bottom: 0; }
+.topic-name { font-weight: 500; }
+.topic-count {
+	flex-shrink: 0;
+	background: var(--yq-primary-soft);
+	color: var(--yq-primary);
+	padding: 2px 10px;
+	border-radius: 999px;
+	font-size: 12.5px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================
+   CRAWLER CHECKLIST
+   ========================================================= */
+.yuniq-ai-crawl-checklist {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+	gap: 14px;
+	margin: 16px 0;
+}
+.yuniq-ai-check-group {
+	background: var(--yq-surface-alt);
+	border: 1px solid var(--yq-border);
+	border-radius: var(--yq-radius);
+	padding: 16px 18px;
+}
+.yuniq-ai-check-group h3 {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 12px;
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--yq-text);
+}
+.yuniq-ai-check-group label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 9px;
+	font-size: 13px;
+	cursor: pointer;
+	line-height: 1.5;
+}
+.yuniq-ai-check-group label:last-child { margin-bottom: 0; }
+.yuniq-ai-check-group label code {
+	margin-inline-start: auto;
+	flex-shrink: 0;
+	font-size: 11px;
+	padding: 1px 6px;
+	border-radius: 4px;
+	background: var(--yq-border);
+	color: var(--yq-text-muted);
+}
+
+.yuniq-ai-badge-ok {
+	background: var(--yq-success-bg);
+	color: var(--yq-success-text);
+	font-size: 11px;
+	font-weight: 500;
+	padding: 2px 9px;
+	border-radius: 999px;
+}
+.yuniq-ai-type-badge {
+	display: inline-block;
+	background: var(--yq-primary-soft);
+	color: var(--yq-primary);
+	font-size: 12px;
+	font-weight: 500;
+	padding: 2px 9px;
+	border-radius: 6px;
+}
+
+/* =========================================================
+   WORDPRESS FORM TABLE
+   ========================================================= */
+.yuniq-ai-admin-wrap .form-table {
+	margin-top: 0;
+}
+.yuniq-ai-admin-wrap .form-table th {
+	width: 210px;
+	padding: 16px 10px 16px 0;
+	font-size: 13.5px;
+	font-weight: 500;
+	color: var(--yq-text);
+	vertical-align: top;
+}
+.yuniq-ai-admin-wrap[dir="rtl"] .form-table th {
+	text-align: right;
+	padding: 16px 0 16px 10px;
+}
+.yuniq-ai-admin-wrap .form-table td {
+	padding: 12px 10px;
+}
+.yuniq-ai-admin-wrap .form-table input[type="text"],
+.yuniq-ai-admin-wrap .form-table input[type="url"],
+.yuniq-ai-admin-wrap .form-table input[type="password"],
+.yuniq-ai-admin-wrap .form-table input[type="number"],
+.yuniq-ai-admin-wrap .form-table textarea,
+.yuniq-ai-admin-wrap .form-table select {
+	font-family: inherit;
+	border-radius: 8px;
+	border-color: #c9cfdb;
+	max-width: 100%;
+}
+.yuniq-ai-admin-wrap .form-table input:focus,
+.yuniq-ai-admin-wrap .form-table textarea:focus,
+.yuniq-ai-admin-wrap .form-table select:focus {
+	border-color: var(--yq-primary);
+	box-shadow: 0 0 0 2px rgba(38, 61, 255, 0.18);
+	outline: none;
+}
+
+/* On a phone the label column would squeeze the field to nothing. */
+@media (max-width: 782px) {
+	.yuniq-ai-admin-wrap {
+		margin-inline: 0;
+	}
+	.yuniq-ai-admin-wrap .form-table th,
+	.yuniq-ai-admin-wrap .form-table td {
+		display: block;
+		width: auto;
+		padding: 6px 0;
+	}
+	.yuniq-ai-admin-wrap .form-table th {
+		padding-top: 14px;
+	}
+	.yuniq-ai-card {
+		padding: 18px 16px;
+	}
+}
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+.yuniq-ai-admin-wrap .button-primary {
+	background: var(--yq-primary);
+	border-color: var(--yq-primary);
+	text-shadow: none;
+	box-shadow: none;
+	border-radius: 8px;
+}
+.yuniq-ai-admin-wrap .button-primary:hover,
+.yuniq-ai-admin-wrap .button-primary:focus {
+	background: var(--yq-primary-hover);
+	border-color: var(--yq-primary-hover);
+}
+.yuniq-ai-admin-wrap .button {
+	border-radius: 8px;
+}
+
+/* =========================================================
+   TABLES
+   ========================================================= */
+.yuniq-ai-admin-wrap .widefat {
+	border-radius: var(--yq-radius);
+	overflow: hidden;
+	border-color: var(--yq-border);
+}
+.yuniq-ai-admin-wrap .widefat th {
+	font-weight: 600;
+	font-size: 12.5px;
+	color: var(--yq-text-muted);
+}
+.yuniq-ai-admin-wrap .widefat td {
+	font-size: 13px;
+	vertical-align: middle;
+}
+
+/* A long log table should scroll on its own, not stretch the page. */
+.yuniq-ai-table-scroll {
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+/* =========================================================
+   DARK ADMIN SCHEME SUPPORT
+   ========================================================= */
+@media (prefers-color-scheme: dark) {
+	.yuniq-ai-admin-wrap.yuniq-ai-follow-scheme {
+		--yq-bg: #14161c;
+		--yq-surface: #1c1f27;
+		--yq-surface-alt: #23262f;
+		--yq-border: #2f333e;
+		--yq-text: #eceef3;
+		--yq-text-muted: #a2aab9;
+		--yq-text-faint: #767f91;
+		--yq-primary-soft: #1d2340;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.yuniq-ai-admin-wrap *,
+	.yuniq-ai-admin-wrap *::before {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
+}

@@ -1,0 +1,29 @@
+# Composer
+/vendor/
+composer.lock
+composer.phar
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+
+# Build artifacts
+/build/
+/dist/
+*.zip
+
+# Editors & OS
+.idea/
+.vscode/
+*.sublime-*
+.DS_Store
+Thumbs.db
+
+# Logs & caches
+*.log
+.phpcs-cache
+.phpunit.result.cache

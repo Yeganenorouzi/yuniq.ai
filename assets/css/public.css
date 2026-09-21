@@ -1,0 +1,1099 @@
+/* =========================================================
+   Yuniq.ai — public widget
+   Author: Yegane Norouzi <https://github.com/Yeganenorouzi>
+
+   Architecture notes
+   ------------------
+   1. Every rule is scoped under #yuniq-ai-root. The ID gives each
+      selector enough specificity to beat almost any host theme rule
+      without `!important`. `@layer` is deliberately NOT used: unlayered
+      styles win over layered ones, and theme CSS is unlayered, so a
+      layer would make theme bleed worse rather than better.
+   2. Design tokens live on .yuniq-ai-root, not :root, so the widget
+      never leaks variables into the host page.
+   3. Colors resolve light -> dark via data-theme, with the system
+      preference as the default.
+   ========================================================= */
+
+/* ---------- Vazirmatn, served from this plugin ----------
+   No Google Fonts request: that host is slow or blocked in Iran, and
+   an external font call is a privacy problem for the site owner.
+   If the woff2 files are absent the stack simply falls through to the
+   next family, so the widget still renders correctly.
+   -------------------------------------------------------- */
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-400.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-500.woff2") format("woff2");
+	font-weight: 500;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-600.woff2") format("woff2");
+	font-weight: 600;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Vazirmatn Local";
+	src: url("../fonts/vazirmatn-700.woff2") format("woff2");
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+
+/* =========================================================
+   TOKENS
+   ========================================================= */
+.yuniq-ai-root {
+	/* Brand — overridden inline from the settings screen. */
+	--yuniq-ai-primary: #263dff;
+	--yuniq-ai-secondary: #111b55;
+	--yuniq-ai-radius: 20px;
+
+	/* Derived brand tints. */
+	--yuniq-ai-primary-soft: color-mix(in srgb, var(--yuniq-ai-primary) 10%, transparent);
+	--yuniq-ai-primary-ring: color-mix(in srgb, var(--yuniq-ai-primary) 22%, transparent);
+	--yuniq-ai-on-primary: #ffffff;
+
+	/* Neutrals — light. */
+	--yuniq-ai-bg: #ffffff;
+	--yuniq-ai-bg-subtle: #f7f8fb;
+	--yuniq-ai-surface: #ffffff;
+	--yuniq-ai-surface-alt: #f2f4f8;
+	--yuniq-ai-border: #e4e7ee;
+	--yuniq-ai-border-strong: #d3d8e3;
+	--yuniq-ai-text: #14161c;
+	--yuniq-ai-text-muted: #61697c;
+	--yuniq-ai-text-faint: #8e96a8;
+
+	--yuniq-ai-danger-bg: #fef2f2;
+	--yuniq-ai-danger-border: #fecaca;
+	--yuniq-ai-danger-text: #b42318;
+	--yuniq-ai-online: #16a34a;
+
+	/* Depth — restrained, Clean SaaS. */
+	--yuniq-ai-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+	--yuniq-ai-shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+	--yuniq-ai-shadow-lg: 0 16px 48px -12px rgba(16, 24, 40, 0.28);
+	--yuniq-ai-shadow-launcher: 0 6px 20px -4px color-mix(in srgb, var(--yuniq-ai-primary) 45%, transparent);
+
+	--yuniq-ai-font: "Vazirmatn Local", "Vazirmatn", "IRANSans", "IRANYekan",
+		-apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+
+	/* Motion — zeroed out under prefers-reduced-motion. */
+	--yuniq-ai-dur-fast: 120ms;
+	--yuniq-ai-dur: 200ms;
+	--yuniq-ai-dur-slow: 320ms;
+	--yuniq-ai-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Dark, from the system preference — unless light was forced. */
+@media (prefers-color-scheme: dark) {
+	.yuniq-ai-root:not([data-theme="light"]) {
+		--yuniq-ai-bg: #12141a;
+		--yuniq-ai-bg-subtle: #0d0f14;
+		--yuniq-ai-surface: #1a1d25;
+		--yuniq-ai-surface-alt: #232732;
+		--yuniq-ai-border: #2b303c;
+		--yuniq-ai-border-strong: #3a4150;
+		--yuniq-ai-text: #eceef3;
+		--yuniq-ai-text-muted: #a2aab9;
+		--yuniq-ai-text-faint: #767f91;
+		--yuniq-ai-danger-bg: #2a1616;
+		--yuniq-ai-danger-border: #5c2626;
+		--yuniq-ai-danger-text: #fca5a5;
+		--yuniq-ai-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+		--yuniq-ai-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+		--yuniq-ai-shadow-lg: 0 16px 48px -12px rgba(0, 0, 0, 0.7);
+	}
+}
+
+/* Dark, forced from the settings screen. */
+.yuniq-ai-root[data-theme="dark"] {
+	--yuniq-ai-bg: #12141a;
+	--yuniq-ai-bg-subtle: #0d0f14;
+	--yuniq-ai-surface: #1a1d25;
+	--yuniq-ai-surface-alt: #232732;
+	--yuniq-ai-border: #2b303c;
+	--yuniq-ai-border-strong: #3a4150;
+	--yuniq-ai-text: #eceef3;
+	--yuniq-ai-text-muted: #a2aab9;
+	--yuniq-ai-text-faint: #767f91;
+	--yuniq-ai-danger-bg: #2a1616;
+	--yuniq-ai-danger-border: #5c2626;
+	--yuniq-ai-danger-text: #fca5a5;
+	--yuniq-ai-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--yuniq-ai-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+	--yuniq-ai-shadow-lg: 0 16px 48px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* =========================================================
+   ROOT + RESET
+   ========================================================= */
+#yuniq-ai-root.yuniq-ai-root {
+	position: fixed;
+	z-index: 2147483000;
+	font-family: var(--yuniq-ai-font);
+	font-size: 14px;
+	line-height: 1.6;
+	color: var(--yuniq-ai-text);
+	direction: rtl;
+	text-align: right;
+	box-sizing: border-box;
+	-webkit-font-smoothing: antialiased;
+}
+
+#yuniq-ai-root *,
+#yuniq-ai-root *::before,
+#yuniq-ai-root *::after {
+	box-sizing: border-box;
+	font-family: inherit;
+	letter-spacing: normal;
+	text-transform: none;
+}
+
+/* Themes love to restyle bare buttons and inputs. */
+#yuniq-ai-root button,
+#yuniq-ai-root input,
+#yuniq-ai-root textarea {
+	margin: 0;
+	font: inherit;
+	color: inherit;
+	border-radius: 0;
+	text-decoration: none;
+	box-shadow: none;
+	appearance: none;
+	-webkit-appearance: none;
+}
+
+#yuniq-ai-root button {
+	border: 0;
+	background: none;
+	cursor: pointer;
+	padding: 0;
+	line-height: 1;
+}
+
+/* One visible, consistent focus ring everywhere. */
+#yuniq-ai-root :focus-visible {
+	outline: 2px solid var(--yuniq-ai-primary);
+	outline-offset: 2px;
+	border-radius: 6px;
+}
+#yuniq-ai-root :focus:not(:focus-visible) {
+	outline: none;
+}
+
+/* Position — desktop. */
+#yuniq-ai-root.yuniq-ai-pos-bottom-right { bottom: 24px; right: 24px; }
+#yuniq-ai-root.yuniq-ai-pos-bottom-left  { bottom: 24px; left: 24px; }
+#yuniq-ai-root.yuniq-ai-pos-top-right    { top: 24px; right: 24px; }
+#yuniq-ai-root.yuniq-ai-pos-top-left     { top: 24px; left: 24px; }
+
+/* =========================================================
+   LAUNCHER
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-launcher-wrap {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	transition: opacity var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+}
+
+#yuniq-ai-root .yuniq-ai-launcher {
+	position: relative;
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	background: var(--yuniq-ai-primary);
+	color: var(--yuniq-ai-on-primary);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: var(--yuniq-ai-shadow-launcher);
+	transition: transform var(--yuniq-ai-dur) var(--yuniq-ai-ease),
+		box-shadow var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+}
+
+#yuniq-ai-root .yuniq-ai-launcher:hover {
+	transform: translateY(-2px) scale(1.04);
+	box-shadow: 0 10px 28px -6px color-mix(in srgb, var(--yuniq-ai-primary) 55%, transparent);
+}
+#yuniq-ai-root .yuniq-ai-launcher:active {
+	transform: translateY(0) scale(0.97);
+}
+
+#yuniq-ai-root .yuniq-ai-online-badge {
+	position: absolute;
+	top: 3px;
+	inset-inline-end: 3px;
+	width: 12px;
+	height: 12px;
+	background: var(--yuniq-ai-online);
+	border: 2px solid var(--yuniq-ai-bg);
+	border-radius: 50%;
+	transition: opacity var(--yuniq-ai-dur-fast) linear;
+}
+
+#yuniq-ai-root .yuniq-ai-launcher-icon,
+#yuniq-ai-root .yuniq-ai-launcher-close {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity var(--yuniq-ai-dur) var(--yuniq-ai-ease),
+		transform var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+}
+#yuniq-ai-root .yuniq-ai-launcher-close {
+	position: absolute;
+	opacity: 0;
+	transform: rotate(-90deg) scale(0.4);
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher-icon {
+	opacity: 0;
+	transform: rotate(90deg) scale(0.4);
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher-close {
+	opacity: 1;
+	transform: rotate(0) scale(1);
+}
+#yuniq-ai-root.is-open .yuniq-ai-online-badge {
+	opacity: 0;
+}
+
+/* Tooltip — hover and keyboard focus, never while open. */
+#yuniq-ai-root .yuniq-ai-launcher-tooltip {
+	position: absolute;
+	bottom: calc(100% + 10px);
+	inset-inline-end: 0;
+	white-space: nowrap;
+	background: var(--yuniq-ai-secondary);
+	color: #fff;
+	font-size: 12.5px;
+	font-weight: 500;
+	padding: 7px 12px;
+	border-radius: 10px;
+	box-shadow: var(--yuniq-ai-shadow-md);
+	opacity: 0;
+	transform: translateY(4px);
+	pointer-events: none;
+	transition: opacity var(--yuniq-ai-dur) var(--yuniq-ai-ease),
+		transform var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+}
+#yuniq-ai-root .yuniq-ai-launcher-wrap:hover .yuniq-ai-launcher-tooltip,
+#yuniq-ai-root .yuniq-ai-launcher:focus-visible + .yuniq-ai-launcher-tooltip,
+#yuniq-ai-root .yuniq-ai-launcher-wrap:focus-within .yuniq-ai-launcher-tooltip {
+	opacity: 1;
+	transform: translateY(0);
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher-tooltip {
+	display: none;
+}
+
+/* =========================================================
+   PANEL
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-panel {
+	position: absolute;
+	width: 420px;
+	height: min(720px, calc(100vh - 120px));
+	max-height: calc(100vh - 120px);
+	background: var(--yuniq-ai-bg);
+	border: 1px solid var(--yuniq-ai-border);
+	border-radius: var(--yuniq-ai-radius);
+	box-shadow: var(--yuniq-ai-shadow-lg);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	opacity: 0;
+	visibility: hidden;
+	transform: translateY(12px) scale(0.98);
+	transform-origin: bottom var(--yuniq-ai-origin-x, right);
+	transition: opacity var(--yuniq-ai-dur-slow) var(--yuniq-ai-ease),
+		transform var(--yuniq-ai-dur-slow) var(--yuniq-ai-ease),
+		visibility var(--yuniq-ai-dur-slow);
+}
+
+#yuniq-ai-root.yuniq-ai-pos-bottom-right .yuniq-ai-panel,
+#yuniq-ai-root.yuniq-ai-pos-bottom-left .yuniq-ai-panel { bottom: calc(100% + 14px); }
+#yuniq-ai-root.yuniq-ai-pos-top-right .yuniq-ai-panel,
+#yuniq-ai-root.yuniq-ai-pos-top-left .yuniq-ai-panel { top: calc(100% + 14px); transform-origin: top var(--yuniq-ai-origin-x, right); }
+#yuniq-ai-root.yuniq-ai-pos-bottom-right .yuniq-ai-panel,
+#yuniq-ai-root.yuniq-ai-pos-top-right .yuniq-ai-panel { right: 0; }
+#yuniq-ai-root.yuniq-ai-pos-bottom-left .yuniq-ai-panel,
+#yuniq-ai-root.yuniq-ai-pos-top-left .yuniq-ai-panel { left: 0; --yuniq-ai-origin-x: left; }
+
+#yuniq-ai-root.is-open .yuniq-ai-panel {
+	opacity: 1;
+	visibility: visible;
+	transform: translateY(0) scale(1);
+}
+
+/* GSAP takes over the open/close tween once it has loaded; this flag
+   hands the property back so the two never fight over transform. */
+#yuniq-ai-root.yuniq-ai-gsap .yuniq-ai-panel {
+	transition: none;
+}
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-panel-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 12px 14px;
+	background: var(--yuniq-ai-surface);
+	border-bottom: 1px solid var(--yuniq-ai-border);
+	flex-shrink: 0;
+}
+
+#yuniq-ai-root .yuniq-ai-header-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+	flex: 1;
+}
+
+#yuniq-ai-root .yuniq-ai-header-logo,
+#yuniq-ai-root .yuniq-ai-header-logo-fallback {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	flex-shrink: 0;
+	object-fit: cover;
+	background: var(--yuniq-ai-surface-alt);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--yuniq-ai-primary);
+}
+
+#yuniq-ai-root .yuniq-ai-header-titles {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	gap: 1px;
+}
+
+#yuniq-ai-root .yuniq-ai-header-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--yuniq-ai-text);
+	line-height: 1.35;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+#yuniq-ai-root .yuniq-ai-header-sub {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11.5px;
+	font-weight: 400;
+	color: var(--yuniq-ai-text-muted);
+	line-height: 1.35;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+#yuniq-ai-root .yuniq-ai-header-sub::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--yuniq-ai-online);
+	flex-shrink: 0;
+}
+
+#yuniq-ai-root .yuniq-ai-header-controls {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+#yuniq-ai-root .yuniq-ai-ctrl-btn {
+	width: 30px;
+	height: 30px;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--yuniq-ai-text-muted);
+	transition: background var(--yuniq-ai-dur-fast) linear,
+		color var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root .yuniq-ai-ctrl-btn:hover {
+	background: var(--yuniq-ai-surface-alt);
+	color: var(--yuniq-ai-text);
+}
+
+/* =========================================================
+   VIDEO
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-video-section {
+	flex-shrink: 0;
+	background: #0a0f2c;
+	line-height: 0;
+}
+#yuniq-ai-root .yuniq-ai-video-wrapper {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	max-height: 170px;
+	overflow: hidden;
+}
+#yuniq-ai-root .yuniq-ai-video-wrapper video {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+
+/* =========================================================
+   BODY
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-panel-body {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--yuniq-ai-bg-subtle);
+	padding: 14px 14px 4px;
+}
+
+#yuniq-ai-root .yuniq-ai-intro {
+	flex-shrink: 0;
+	text-align: center;
+	padding: 8px 4px 14px;
+}
+#yuniq-ai-root .yuniq-ai-intro-title {
+	margin: 0 0 4px;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--yuniq-ai-text);
+	line-height: 1.4;
+}
+#yuniq-ai-root .yuniq-ai-intro-sub {
+	margin: 0;
+	font-size: 12.5px;
+	color: var(--yuniq-ai-text-muted);
+	line-height: 1.6;
+}
+
+/* =========================================================
+   MESSAGES
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-messages {
+	display: none;
+	flex-direction: column;
+	gap: 8px;
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding-bottom: 8px;
+	scroll-behavior: smooth;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: thin;
+	scrollbar-color: var(--yuniq-ai-border-strong) transparent;
+}
+#yuniq-ai-root .yuniq-ai-messages.is-active,
+#yuniq-ai-root .yuniq-ai-messages.yuniq-ai-visible {
+	display: flex;
+}
+#yuniq-ai-root .yuniq-ai-messages::-webkit-scrollbar { width: 6px; }
+#yuniq-ai-root .yuniq-ai-messages::-webkit-scrollbar-track { background: transparent; }
+#yuniq-ai-root .yuniq-ai-messages::-webkit-scrollbar-thumb {
+	background: var(--yuniq-ai-border-strong);
+	border-radius: 3px;
+}
+
+#yuniq-ai-root .yuniq-ai-msg {
+	max-width: 85%;
+	padding: 9px 13px;
+	border-radius: 14px;
+	font-size: 13.5px;
+	line-height: 1.65;
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
+	animation: yuniq-ai-msg-in var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+}
+@keyframes yuniq-ai-msg-in {
+	from { opacity: 0; transform: translateY(6px); }
+	to   { opacity: 1; transform: translateY(0); }
+}
+
+#yuniq-ai-root .yuniq-ai-msg-user {
+	align-self: flex-start;
+	background: var(--yuniq-ai-primary);
+	color: var(--yuniq-ai-on-primary);
+	border-end-start-radius: 4px;
+}
+#yuniq-ai-root .yuniq-ai-msg-assistant {
+	align-self: flex-end;
+	background: var(--yuniq-ai-surface);
+	color: var(--yuniq-ai-text);
+	border: 1px solid var(--yuniq-ai-border);
+	border-end-end-radius: 4px;
+	box-shadow: var(--yuniq-ai-shadow-sm);
+}
+#yuniq-ai-root .yuniq-ai-msg-assistant a {
+	color: var(--yuniq-ai-primary);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	overflow-wrap: anywhere;
+}
+#yuniq-ai-root .yuniq-ai-msg-assistant strong {
+	font-weight: 600;
+}
+#yuniq-ai-root .yuniq-ai-msg-error {
+	align-self: center;
+	max-width: 94%;
+	background: var(--yuniq-ai-danger-bg);
+	border: 1px solid var(--yuniq-ai-danger-border);
+	color: var(--yuniq-ai-danger-text);
+	font-size: 12.5px;
+	text-align: center;
+}
+
+/* Typing indicator */
+#yuniq-ai-root .yuniq-ai-typing {
+	align-self: flex-end;
+	display: flex;
+	gap: 4px;
+	padding: 13px 15px;
+	background: var(--yuniq-ai-surface);
+	border: 1px solid var(--yuniq-ai-border);
+	border-radius: 14px;
+	border-end-end-radius: 4px;
+	box-shadow: var(--yuniq-ai-shadow-sm);
+}
+#yuniq-ai-root .yuniq-ai-typing span {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--yuniq-ai-text-faint);
+	animation: yuniq-ai-bounce 1.2s infinite ease-in-out;
+}
+#yuniq-ai-root .yuniq-ai-typing span:nth-child(2) { animation-delay: 0.15s; }
+#yuniq-ai-root .yuniq-ai-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes yuniq-ai-bounce {
+	0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
+	30%           { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Streaming caret */
+#yuniq-ai-root .yuniq-ai-caret {
+	display: inline-block;
+	width: 2px;
+	height: 1em;
+	margin-inline-start: 2px;
+	background: var(--yuniq-ai-primary);
+	vertical-align: text-bottom;
+	animation: yuniq-ai-blink 0.9s step-end infinite;
+}
+@keyframes yuniq-ai-blink {
+	50% { opacity: 0; }
+}
+
+/* Jump-to-latest — appears only when the reader has scrolled up. */
+#yuniq-ai-root .yuniq-ai-jump {
+	position: absolute;
+	bottom: 12px;
+	inset-inline-start: 50%;
+	transform: translateX(50%) translateY(6px);
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 6px 12px;
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--yuniq-ai-text);
+	background: var(--yuniq-ai-surface);
+	border: 1px solid var(--yuniq-ai-border-strong);
+	border-radius: 999px;
+	box-shadow: var(--yuniq-ai-shadow-md);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--yuniq-ai-dur) var(--yuniq-ai-ease),
+		transform var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+	z-index: 4;
+}
+#yuniq-ai-root .yuniq-ai-jump.is-visible {
+	opacity: 1;
+	pointer-events: auto;
+	transform: translateX(50%) translateY(0);
+}
+
+/* =========================================================
+   INPUT AREA
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-input-area {
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	padding: 10px 12px;
+	background: var(--yuniq-ai-surface);
+	border-top: 1px solid var(--yuniq-ai-border);
+}
+
+/* Suggestion chips.
+   These used to slide on an infinite loop, which meant a visitor had to
+   chase a moving target to click one. They are a plain scrollable row
+   now — swipeable on touch, keyboard reachable, and still. */
+#yuniq-ai-root .yuniq-ai-prompt-ticker {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 8px;
+	overflow-x: auto;
+	overscroll-behavior-inline: contain;
+	scroll-snap-type: x proximity;
+	scrollbar-width: none;
+	-webkit-overflow-scrolling: touch;
+	mask-image: linear-gradient(to left, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+	-webkit-mask-image: linear-gradient(to left, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+}
+#yuniq-ai-root .yuniq-ai-prompt-ticker::-webkit-scrollbar { display: none; }
+#yuniq-ai-root .yuniq-ai-prompt-ticker.is-hidden { display: none; }
+
+#yuniq-ai-root .yuniq-ai-ticker-track {
+	display: flex;
+	gap: 6px;
+	width: max-content;
+}
+
+#yuniq-ai-root .yuniq-ai-ticker-chip {
+	flex-shrink: 0;
+	scroll-snap-align: start;
+	padding: 6px 13px;
+	font-size: 12.5px;
+	font-weight: 500;
+	white-space: nowrap;
+	color: var(--yuniq-ai-text-muted);
+	background: var(--yuniq-ai-surface);
+	border: 1px solid var(--yuniq-ai-border);
+	border-radius: 999px;
+	transition: color var(--yuniq-ai-dur-fast) linear,
+		border-color var(--yuniq-ai-dur-fast) linear,
+		background var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root .yuniq-ai-ticker-chip:hover {
+	color: var(--yuniq-ai-primary);
+	border-color: var(--yuniq-ai-primary);
+	background: var(--yuniq-ai-primary-soft);
+}
+
+/* Composer */
+#yuniq-ai-root #yuniq-ai-chat-form {
+	display: flex;
+	align-items: flex-end;
+	gap: 4px;
+	padding: 4px;
+	background: var(--yuniq-ai-surface-alt);
+	border: 1.5px solid transparent;
+	border-radius: 24px;
+	transition: border-color var(--yuniq-ai-dur-fast) linear,
+		background var(--yuniq-ai-dur-fast) linear,
+		box-shadow var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root #yuniq-ai-chat-form:focus-within {
+	background: var(--yuniq-ai-surface);
+	border-color: var(--yuniq-ai-primary);
+	box-shadow: 0 0 0 3px var(--yuniq-ai-primary-ring);
+}
+/* The form owns the focus ring, so the field inside must not draw one. */
+#yuniq-ai-root #yuniq-ai-chat-form:focus-within #yuniq-ai-input:focus-visible {
+	outline: none;
+}
+
+#yuniq-ai-root #yuniq-ai-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	border: 0;
+	background: transparent;
+	padding: 8px 6px;
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--yuniq-ai-text);
+	text-align: right;
+	resize: none;
+	max-height: 108px;
+	overflow-y: auto;
+	scrollbar-width: none;
+}
+#yuniq-ai-root #yuniq-ai-input::-webkit-scrollbar { display: none; }
+#yuniq-ai-root #yuniq-ai-input::placeholder {
+	color: var(--yuniq-ai-text-faint);
+	opacity: 1;
+}
+
+#yuniq-ai-root #yuniq-ai-send {
+	width: 38px;
+	height: 38px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--yuniq-ai-primary);
+	color: var(--yuniq-ai-on-primary);
+	transition: transform var(--yuniq-ai-dur-fast) var(--yuniq-ai-ease),
+		opacity var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root #yuniq-ai-send:hover:not(:disabled) { transform: scale(1.06); }
+#yuniq-ai-root #yuniq-ai-send:active:not(:disabled) { transform: scale(0.94); }
+#yuniq-ai-root #yuniq-ai-send:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+	transform: none;
+}
+
+#yuniq-ai-root .yuniq-ai-powered {
+	margin-top: 8px;
+	text-align: center;
+	font-size: 10.5px;
+	color: var(--yuniq-ai-text-faint);
+	line-height: 1.4;
+}
+#yuniq-ai-root .yuniq-ai-powered a { color: inherit; }
+
+/* Visually hidden, still announced by screen readers. */
+#yuniq-ai-root .yuniq-ai-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* =========================================================
+   MOBILE — full-screen sheet
+   ========================================================= */
+@media (max-width: 640px) {
+	#yuniq-ai-root.yuniq-ai-pos-bottom-right,
+	#yuniq-ai-root.yuniq-ai-pos-bottom-left,
+	#yuniq-ai-root.yuniq-ai-pos-top-right,
+	#yuniq-ai-root.yuniq-ai-pos-top-left {
+		bottom: 16px;
+		inset-inline-end: 16px;
+		inset-inline-start: auto;
+		top: auto;
+	}
+
+	#yuniq-ai-root .yuniq-ai-panel {
+		position: fixed;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		max-height: none;
+		border: 0;
+		border-radius: 0;
+		transform: translateY(100%);
+		transition: transform var(--yuniq-ai-dur-slow) var(--yuniq-ai-ease),
+			opacity var(--yuniq-ai-dur-slow) var(--yuniq-ai-ease),
+			visibility var(--yuniq-ai-dur-slow);
+	}
+	#yuniq-ai-root.is-open .yuniq-ai-panel {
+		transform: translateY(0);
+	}
+
+	#yuniq-ai-root.is-open .yuniq-ai-launcher-wrap {
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	#yuniq-ai-root .yuniq-ai-panel-header {
+		padding-top: max(12px, env(safe-area-inset-top));
+	}
+	#yuniq-ai-root .yuniq-ai-input-area {
+		padding-bottom: max(10px, env(safe-area-inset-bottom));
+	}
+
+	/* 16px keeps iOS Safari from zooming the page on focus. */
+	#yuniq-ai-root #yuniq-ai-input {
+		font-size: 16px;
+	}
+}
+
+/* Page scroll lock while the sheet is open.
+   `touch-action: none` is deliberately not used here: it also killed
+   scrolling *inside* the panel on several mobile browsers. */
+body.yuniq-ai-open {
+	overflow: hidden;
+}
+
+/* =========================================================
+   REDUCED MOTION
+   ========================================================= */
+@media (prefers-reduced-motion: reduce) {
+	#yuniq-ai-root,
+	#yuniq-ai-root * {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+	#yuniq-ai-root .yuniq-ai-messages {
+		scroll-behavior: auto;
+	}
+}
+
+/* =========================================================
+   HIGH CONTRAST
+   ========================================================= */
+@media (forced-colors: active) {
+	#yuniq-ai-root .yuniq-ai-panel,
+	#yuniq-ai-root .yuniq-ai-msg,
+	#yuniq-ai-root .yuniq-ai-ticker-chip {
+		border: 1px solid CanvasText;
+	}
+}
+
+/* =========================================================
+   LAUNCHER — signature pulsing ring
+   A plain circle is what every other chat widget uses; this ring is the
+   one deliberately distinct visual signature carried across the launcher.
+   Purely decorative, so it is safe to zero out under reduced motion along
+   with everything else in that media block above.
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-launcher::before {
+	content: "";
+	position: absolute;
+	inset: -6px;
+	border-radius: 50%;
+	border: 2px solid var(--yuniq-ai-primary);
+	opacity: 0.55;
+	animation: yuniq-ai-ring 2.4s var(--yuniq-ai-ease) infinite;
+	pointer-events: none;
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher::before {
+	display: none;
+}
+@keyframes yuniq-ai-ring {
+	0%   { transform: scale(1); opacity: 0.55; }
+	70%  { transform: scale(1.35); opacity: 0; }
+	100% { transform: scale(1.35); opacity: 0; }
+}
+
+/* =========================================================
+   TALK TO A HUMAN
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-human-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	padding: 8px 10px;
+	margin-bottom: 8px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--yuniq-ai-text-muted);
+	background: var(--yuniq-ai-surface-alt);
+	border: 1px dashed var(--yuniq-ai-border-strong);
+	border-radius: 12px;
+	transition: color var(--yuniq-ai-dur-fast) linear,
+		border-color var(--yuniq-ai-dur-fast) linear,
+		background var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root .yuniq-ai-human-btn:hover {
+	color: var(--yuniq-ai-primary);
+	border-color: var(--yuniq-ai-primary);
+	background: var(--yuniq-ai-primary-soft);
+}
+
+/* System notices (escalation status) and the "need a human?" prompt */
+#yuniq-ai-root .yuniq-ai-msg-system {
+	align-self: center;
+	max-width: 94%;
+	background: transparent;
+	color: var(--yuniq-ai-text-faint);
+	font-size: 11.5px;
+	text-align: center;
+	padding: 4px 10px;
+	animation: none;
+}
+#yuniq-ai-root .yuniq-ai-need-human {
+	padding: 0;
+}
+#yuniq-ai-root .yuniq-ai-need-human button {
+	padding: 7px 16px;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: var(--yuniq-ai-primary);
+	background: var(--yuniq-ai-primary-soft);
+	border: 1px solid var(--yuniq-ai-primary);
+	border-radius: 999px;
+	transition: background var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root .yuniq-ai-need-human button:hover {
+	background: var(--yuniq-ai-primary-ring);
+}
+
+/* Agent reply — same bubble language as the assistant, distinguished by a
+   secondary-color accent so a visitor can tell a human answered. */
+#yuniq-ai-root .yuniq-ai-msg-agent {
+	border-inline-start: 3px solid var(--yuniq-ai-secondary);
+}
+
+/* =========================================================
+   PRODUCT CARD
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-product-card {
+	max-width: 92%;
+	padding: 0;
+	overflow: hidden;
+}
+#yuniq-ai-root .yuniq-ai-product-image {
+	display: block;
+	width: 100%;
+	max-height: 140px;
+	object-fit: cover;
+	background: var(--yuniq-ai-surface-alt);
+}
+#yuniq-ai-root .yuniq-ai-product-body {
+	padding: 10px 12px;
+}
+#yuniq-ai-root .yuniq-ai-product-title {
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--yuniq-ai-text);
+	margin-bottom: 4px;
+}
+#yuniq-ai-root .yuniq-ai-product-price {
+	font-size: 13px;
+	color: var(--yuniq-ai-primary);
+	font-weight: 600;
+	margin-bottom: 6px;
+}
+#yuniq-ai-root .yuniq-ai-product-price s {
+	color: var(--yuniq-ai-text-faint);
+	font-weight: 400;
+	margin-inline-end: 4px;
+}
+#yuniq-ai-root .yuniq-ai-product-stock {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 500;
+	padding: 2px 8px;
+	border-radius: 999px;
+	margin-bottom: 8px;
+}
+#yuniq-ai-root .yuniq-ai-product-stock.is-in-stock {
+	color: var(--yuniq-ai-online);
+	background: color-mix(in srgb, var(--yuniq-ai-online) 14%, transparent);
+}
+#yuniq-ai-root .yuniq-ai-product-stock.is-out-of-stock {
+	color: var(--yuniq-ai-danger-text);
+	background: var(--yuniq-ai-danger-bg);
+}
+#yuniq-ai-root .yuniq-ai-product-actions {
+	display: flex;
+	gap: 6px;
+}
+#yuniq-ai-root .yuniq-ai-product-btn {
+	flex: 1 1 auto;
+	text-align: center;
+	padding: 7px 8px;
+	font-size: 12px;
+	font-weight: 500;
+	border-radius: 8px;
+	color: var(--yuniq-ai-text);
+	background: var(--yuniq-ai-surface-alt);
+	border: 1px solid var(--yuniq-ai-border);
+}
+#yuniq-ai-root .yuniq-ai-product-btn-primary {
+	color: var(--yuniq-ai-on-primary);
+	background: var(--yuniq-ai-primary);
+	border-color: var(--yuniq-ai-primary);
+}
+
+/* =========================================================
+   INLINE LEAD FORM
+   ========================================================= */
+#yuniq-ai-root .yuniq-ai-inline-form {
+	max-width: 94%;
+	width: 100%;
+}
+#yuniq-ai-root .yuniq-ai-inline-form-title {
+	font-size: 13px;
+	font-weight: 600;
+	margin-bottom: 8px;
+}
+#yuniq-ai-root .yuniq-ai-inline-form-row {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-bottom: 8px;
+	font-size: 12px;
+	color: var(--yuniq-ai-text-muted);
+}
+#yuniq-ai-root .yuniq-ai-inline-form-row input,
+#yuniq-ai-root .yuniq-ai-inline-form-row textarea {
+	padding: 8px 10px;
+	font-size: 13px;
+	color: var(--yuniq-ai-text);
+	background: var(--yuniq-ai-surface-alt);
+	border: 1px solid var(--yuniq-ai-border);
+	border-radius: 8px;
+}
+#yuniq-ai-root .yuniq-ai-inline-form-row input:focus-visible,
+#yuniq-ai-root .yuniq-ai-inline-form-row textarea:focus-visible {
+	border-color: var(--yuniq-ai-primary);
+}
+#yuniq-ai-root .yuniq-ai-inline-form button.yuniq-ai-product-btn-primary {
+	width: 100%;
+}
+
+/* =========================================================
+   FULL-PAGE MODE — the [yuniq_ai_page] shortcode
+   Same widget, embedded in the page flow instead of floating: the launcher
+   is hidden (public.js opens the panel on load automatically) and the
+   panel fills its container rather than a fixed-size floating box.
+   ========================================================= */
+#yuniq-ai-root.yuniq-ai-page-mode {
+	position: relative;
+	inset: auto;
+	width: 100%;
+	max-width: 720px;
+	height: 78vh;
+	min-height: 480px;
+	margin: 0 auto;
+}
+#yuniq-ai-root.yuniq-ai-page-mode .yuniq-ai-launcher-wrap {
+	display: none;
+}
+#yuniq-ai-root.yuniq-ai-page-mode .yuniq-ai-panel {
+	position: static;
+	width: 100%;
+	height: 100%;
+	max-height: none;
+	opacity: 1;
+	visibility: visible;
+	transform: none;
+}
+#yuniq-ai-root.yuniq-ai-page-mode .yuniq-ai-ctrl-btn#yuniq-ai-panel-close {
+	display: none;
+}

@@ -348,6 +348,13 @@ final class Repository {
 	public function count_open() {
 		global $wpdb;
 
-		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$this->conversations_table} WHERE status = 'pending'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		// Runs on every `admin_menu` (building the menu badge), which is
+		// the earliest point a table could ever be queried — suppressed so
+		// an interrupted upgrade never surfaces a raw DB error inline.
+		$suppress = $wpdb->suppress_errors( true );
+		$count    = $wpdb->get_var( "SELECT COUNT(*) FROM {$this->conversations_table} WHERE status = 'pending'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->suppress_errors( $suppress );
+
+		return (int) $count;
 	}
 }

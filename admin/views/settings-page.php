@@ -33,7 +33,6 @@ $has_woo = class_exists( 'WooCommerce' );
 				<button type="button" class="yuniq-ai-tab-btn active" data-tab="general">عمومی</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="ai">API هوش مصنوعی</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="crawler">خزنده محتوا</button>
-				<button type="button" class="yuniq-ai-tab-btn" data-tab="video">ویدیو</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="appearance">طراحی</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="live-support">پشتیبانی زنده</button>
 			</nav>
@@ -99,7 +98,7 @@ $has_woo = class_exists( 'WooCommerce' );
 				</div>
 				<div class="yuniq-ai-card">
 					<h2>کارت‌های اقدام سریع</h2>
-					<p class="description">این کارت‌ها زیر ویدیو در پنل دستیار نمایش داده می‌شوند.</p>
+					<p class="description">این کارت‌ها بالای کادر پیام در پنل دستیار نمایش داده می‌شوند.</p>
 					<div id="yuniq-ai-quick-actions">
 						<?php
 						$actions = isset( $s['quick_actions'] ) && is_array( $s['quick_actions'] ) ? $s['quick_actions'] : array();
@@ -250,59 +249,6 @@ $has_woo = class_exists( 'WooCommerce' );
 				</div>
 			</div>
 
-			<!-- ویدیو -->
-			<div class="yuniq-ai-tab-panel" id="tab-video">
-				<div class="yuniq-ai-card">
-					<h2>مدیریت ویدیو</h2>
-					<p class="description">ویدیو در بالای پنل دستیار (زیر هدر) نمایش داده می‌شود و با باز شدن پنل به‌صورت خودکار پخش می‌شود.</p>
-					<table class="form-table">
-						<tr>
-							<th scope="row">فعال‌سازی ویدیو</th>
-							<td>
-								<label class="yuniq-ai-switch">
-									<input type="checkbox" name="yuniq_ai_settings[video_enabled]" value="1" <?php checked( ! empty( $s['video_enabled'] ) ); ?> />
-									<span class="slider"></span>
-								</label>
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">آدرس ویدیو (MP4)</th>
-							<td>
-								<input type="url" name="yuniq_ai_settings[video_url]" value="<?php echo esc_attr( isset( $s['video_url'] ) ? $s['video_url'] : '' ); ?>" class="large-text" placeholder="https://domain.com/uploads/ai-video.mp4" />
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">پخش خودکار</th>
-							<td>
-								<label class="yuniq-ai-switch">
-									<input type="checkbox" name="yuniq_ai_settings[video_autoplay]" value="1" <?php checked( ! isset( $s['video_autoplay'] ) || ! empty( $s['video_autoplay'] ) ); ?> />
-									<span class="slider"></span>
-								</label>
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">بی‌صدا (Mute)</th>
-							<td>
-								<label class="yuniq-ai-switch">
-									<input type="checkbox" name="yuniq_ai_settings[video_mute]" value="1" <?php checked( ! isset( $s['video_mute'] ) || ! empty( $s['video_mute'] ) ); ?> />
-									<span class="slider"></span>
-								</label>
-								<p class="description">برای پخش خودکار در مرورگرها معمولاً باید بی‌صدا باشد.</p>
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">نمایش کنترل‌ها</th>
-							<td>
-								<label class="yuniq-ai-switch">
-									<input type="checkbox" name="yuniq_ai_settings[video_controls]" value="1" <?php checked( ! empty( $s['video_controls'] ) ); ?> />
-									<span class="slider"></span>
-								</label>
-							</td>
-						</tr>
-					</table>
-				</div>
-			</div>
-
 			<!-- طراحی -->
 			<div class="yuniq-ai-tab-panel" id="tab-appearance">
 				<div class="yuniq-ai-card">
@@ -322,6 +268,17 @@ $has_woo = class_exists( 'WooCommerce' );
 						<tr>
 							<th scope="row">رنگ ثانویه</th>
 							<td><input type="text" name="yuniq_ai_settings[secondary_color]" value="<?php echo esc_attr( isset( $s['secondary_color'] ) ? $s['secondary_color'] : '#111B55' ); ?>" class="yuniq-ai-color-picker" /></td>
+						</tr>
+						<tr>
+							<th scope="row">سبک هدر پنل</th>
+							<td>
+								<?php $header_style = isset( $s['header_style'] ) ? $s['header_style'] : 'gradient'; ?>
+								<select name="yuniq_ai_settings[header_style]">
+									<option value="gradient" <?php selected( $header_style, 'gradient' ); ?>>گرادیان (رنگ اصلی → رنگ ثانویه)</option>
+									<option value="solid" <?php selected( $header_style, 'solid' ); ?>>ساده (تخت و مینیمال)</option>
+								</select>
+								<p class="description">گرادیان از دو رنگی که بالا انتخاب کردید ساخته می‌شود، پس با تغییر رنگ‌ها ظاهر هدر هم عوض می‌شود.</p>
+							</td>
 						</tr>
 						<tr>
 							<th scope="row">حالت رنگی</th>

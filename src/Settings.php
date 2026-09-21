@@ -81,14 +81,6 @@ final class Settings {
 			'wp_custom_post_types'  => false,
 			'custom_post_types'     => array(),
 
-			// Video.
-			'video_enabled'         => false,
-			'video_url'             => '',
-			'video_title'           => '',
-			'video_autoplay'        => true,
-			'video_mute'            => true,
-			'video_controls'        => false,
-
 			// Presentation.
 			'assistant_name'        => 'دستیار هوشمند',
 			'welcome_message'       => 'سلام! چطور می‌تونم کمکتون کنم؟',
@@ -96,6 +88,7 @@ final class Settings {
 			'logo_url'              => '',
 			'primary_color'         => '#263DFF',
 			'secondary_color'       => '#111B55',
+			'header_style'          => 'gradient',
 			'button_icon'           => 'sparkle',
 			'theme'                 => 'auto',
 			'widget_position'       => 'bottom-right',
@@ -269,14 +262,6 @@ final class Settings {
 
 		$output['content_types'] = $this->derive_content_types( $output );
 
-		// --- Video ------------------------------------------------------------
-		$output['video_enabled']  = ! empty( $input['video_enabled'] );
-		$output['video_url']      = isset( $input['video_url'] ) ? esc_url_raw( $input['video_url'] ) : '';
-		$output['video_title']    = isset( $input['video_title'] ) ? sanitize_text_field( $input['video_title'] ) : '';
-		$output['video_autoplay'] = ! empty( $input['video_autoplay'] );
-		$output['video_mute']     = ! empty( $input['video_mute'] );
-		$output['video_controls'] = ! empty( $input['video_controls'] );
-
 		// --- Presentation -----------------------------------------------------
 		$text_fields = array(
 			'assistant_name'  => 'دستیار هوشمند',
@@ -294,6 +279,10 @@ final class Settings {
 		$output['logo_url']          = isset( $input['logo_url'] ) ? esc_url_raw( $input['logo_url'] ) : '';
 		$output['primary_color']     = isset( $input['primary_color'] ) ? (string) sanitize_hex_color( $input['primary_color'] ) : '#263DFF';
 		$output['secondary_color']   = isset( $input['secondary_color'] ) ? (string) sanitize_hex_color( $input['secondary_color'] ) : '#111B55';
+
+		$header_style           = isset( $input['header_style'] ) ? sanitize_key( $input['header_style'] ) : 'gradient';
+		$output['header_style'] = in_array( $header_style, array( 'gradient', 'solid' ), true ) ? $header_style : 'gradient';
+
 		$output['button_icon']       = isset( $input['button_icon'] ) ? sanitize_key( $input['button_icon'] ) : 'sparkle';
 
 		$theme            = isset( $input['theme'] ) ? sanitize_key( $input['theme'] ) : 'auto';

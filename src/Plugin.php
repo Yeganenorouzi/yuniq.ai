@@ -89,8 +89,12 @@ final class Plugin {
 		$this->booted = true;
 
 		// Applies pending table changes after an update, without the site
-		// owner having to deactivate and reactivate the plugin.
-		add_action( 'admin_init', array( Schema::class, 'maybe_upgrade' ) );
+		// owner having to deactivate and reactivate the plugin. Run eagerly
+		// here — not deferred to `admin_init` — because `admin_menu` (which
+		// the live-support badge count relies on) fires before `admin_init`
+		// on every admin request, so deferring this left a window where the
+		// badge query ran against tables that did not exist yet.
+		Schema::maybe_upgrade();
 
 		foreach ( $this->hookable_services() as $id ) {
 			$service = $this->container->get( $id );

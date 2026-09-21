@@ -42,6 +42,16 @@ final class Widget implements HookableInterface {
 	private $client;
 
 	/**
+	 * Whether the `[yuniq_ai_page]` shortcode already printed the widget
+	 * markup earlier in this request, so the floating footer copy can skip
+	 * itself — otherwise the page would end up with two elements sharing
+	 * `id="yuniq-ai-root"`.
+	 *
+	 * @var bool
+	 */
+	private $rendered_full_page = false;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Settings $settings Plugin settings.
@@ -146,12 +156,6 @@ final class Widget implements HookableInterface {
 			'chatWidth'        => (int) $this->settings->get( 'chat_width' ),
 			'chatHeight'       => (int) $this->settings->get( 'chat_height' ),
 			'enableAnimations' => (bool) $this->settings->get( 'enable_animations' ),
-			'videoEnabled'     => (bool) $this->settings->get( 'video_enabled' ),
-			'videoAutoplay'    => (bool) $this->settings->get( 'video_autoplay' ),
-			// Honours the admin toggle; it used to be hard-coded to false,
-			// which made the "بی‌صدا" switch in the settings screen inert.
-			'videoMute'        => (bool) $this->settings->get( 'video_mute' ),
-			'videoControls'    => (bool) $this->settings->get( 'video_controls' ),
 			'streaming'        => $this->client->can_stream(),
 			'quickActions'     => $this->quick_actions(),
 			'liveSupport'      => array(
@@ -264,7 +268,7 @@ final class Widget implements HookableInterface {
 	 * @return void
 	 */
 	public function render() {
-		if ( ! $this->is_active() ) {
+		if ( ! $this->is_active() || $this->rendered_full_page ) {
 			return;
 		}
 
@@ -285,6 +289,10 @@ final class Widget implements HookableInterface {
 		if ( ! $this->is_active() || ! $this->settings->get( 'full_page_enabled' ) ) {
 			return '';
 		}
+
+		// Stops the wp_footer copy from also printing on this page, which
+		// would otherwise duplicate `id="yuniq-ai-root"`.
+		$this->rendered_full_page = true;
 
 		// Idempotent: registers/enqueues the same handle enqueue_assets()
 		// already queues on wp_enqueue_scripts, in case this page somehow
@@ -307,13 +315,11 @@ final class Widget implements HookableInterface {
 	private function render_markup( $extra_root_class ) {
 		$assistant_name = (string) $this->settings->get( 'assistant_name' );
 		$position_class = 'yuniq-ai-pos-' . sanitize_html_class( (string) $this->settings->get( 'widget_position', 'bottom-right' ) );
+		$header_style   = 'solid' === $this->settings->get( 'header_style' ) ? 'solid' : 'gradient';
 		$logo_url       = $this->logo_url();
 		$header_sub     = (string) $this->settings->get( 'header_subtitle' );
 		$help_title     = (string) $this->settings->get( 'help_title' );
 		$help_sub       = (string) $this->settings->get( 'help_subtitle' );
-		$video_url      = (string) $this->settings->get( 'video_url' );
-		$video_enabled  = $this->settings->get( 'video_enabled' ) && '' !== $video_url;
-		$video_muted    = (bool) $this->settings->get( 'video_mute' );
 		?>
 		<div id="yuniq-ai-root"
 			class="yuniq-ai-root <?php echo esc_attr( $position_class . $extra_root_class ); ?>"
@@ -343,10 +349,11 @@ final class Widget implements HookableInterface {
 				aria-labelledby="yuniq-ai-panel-title"
 				aria-hidden="true">
 
-				<header class="yuniq-ai-panel-header">
+				<header class="yuniq-ai-panel-header yuniq-ai-header-<?php echo esc_attr( $header_style ); ?>">
+					<span class="yuniq-ai-header-glow" aria-hidden="true"></span>
 					<div class="yuniq-ai-header-brand">
 						<?php if ( $logo_url ) : ?>
-							<img src="<?php echo esc_url( $logo_url ); ?>" alt="" class="yuniq-ai-header-logo" width="36" height="36" />
+							<img src="<?php echo esc_url( $logo_url ); ?>" alt="" class="yuniq-ai-header-logo" width="40" height="40" />
 						<?php else : ?>
 							<div class="yuniq-ai-header-logo-fallback" aria-hidden="true">
 								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 2a5 5 0 0 1 5 5v1h1a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3v-1H6a3 3 0 0 1-3-3v-3a3 3 0 0 1 3-3h1V7a5 5 0 0 1 5-5z"/><circle cx="9.5" cy="12.5" r="1"/><circle cx="14.5" cy="12.5" r="1"/></svg>
@@ -373,20 +380,11 @@ final class Widget implements HookableInterface {
 					</div>
 				</header>
 
-				<?php if ( $video_enabled ) : ?>
-					<div class="yuniq-ai-video-section" id="yuniq-ai-video-section">
-						<div class="yuniq-ai-video-wrapper">
-							<video id="yuniq-ai-video" playsinline webkit-playsinline preload="none" loop
-								<?php echo $video_muted ? 'muted' : ''; ?>
-								<?php echo $this->settings->get( 'video_controls' ) ? 'controls' : ''; ?>>
-								<source src="<?php echo esc_url( $video_url ); ?>" type="video/mp4" />
-							</video>
-						</div>
-					</div>
-				<?php endif; ?>
-
 				<div class="yuniq-ai-panel-body" id="yuniq-ai-panel-body">
 					<div class="yuniq-ai-intro" id="yuniq-ai-intro">
+						<div class="yuniq-ai-intro-icon" aria-hidden="true">
+							<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 2a5 5 0 0 1 5 5v1h1a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3h-1v1a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3v-1H6a3 3 0 0 1-3-3v-3a3 3 0 0 1 3-3h1V7a5 5 0 0 1 5-5z"/><circle cx="9.5" cy="12.5" r="1"/><circle cx="14.5" cy="12.5" r="1"/></svg>
+						</div>
 						<h3 class="yuniq-ai-intro-title"><?php echo esc_html( $help_title ); ?></h3>
 						<?php if ( $help_sub ) : ?>
 							<p class="yuniq-ai-intro-sub"><?php echo esc_html( $help_sub ); ?></p>

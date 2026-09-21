@@ -26,7 +26,6 @@
 	var closeBtn = document.getElementById('yuniq-ai-panel-close');
 	var themeBtn = document.getElementById('yuniq-ai-theme-toggle');
 	var jumpBtn = document.getElementById('yuniq-ai-jump');
-	var videoEl = document.getElementById('yuniq-ai-video');
 	var tickerEl = document.getElementById('yuniq-ai-prompt-ticker');
 	var trackEl = document.getElementById('yuniq-ai-ticker-track');
 	var humanBtn = document.getElementById('yuniq-ai-talk-human');
@@ -169,39 +168,6 @@
 	launcher.addEventListener('focus', loadMotion, { once: true });
 
 	/* =====================================================
-	   Video
-	   ===================================================== */
-	function playVideo() {
-		if (!videoEl) return;
-		try {
-			var wantsMuted = !!cfg.videoMute;
-			videoEl.setAttribute('playsinline', '');
-			videoEl.playsInline = true;
-			videoEl.muted = wantsMuted;
-			videoEl.defaultMuted = wantsMuted;
-			videoEl.volume = wantsMuted ? 0 : 1;
-
-			if (!cfg.videoAutoplay) return;
-
-			var p = videoEl.play();
-			if (p && typeof p.catch === 'function') {
-				p.catch(function () {
-					// Browsers refuse unmuted autoplay; retry silently rather
-					// than leaving the visitor with a frozen frame.
-					if (wantsMuted) return;
-					videoEl.muted = true;
-					videoEl.play().catch(function () {});
-				});
-			}
-		} catch (e) {}
-	}
-
-	function pauseVideo() {
-		if (!videoEl) return;
-		try { videoEl.pause(); } catch (e) {}
-	}
-
-	/* =====================================================
 	   Mobile keyboard
 	   ===================================================== */
 	function onViewportChange() {
@@ -287,7 +253,6 @@
 			afterOpen();
 		}
 
-		playVideo();
 		onViewportChange();
 	}
 
@@ -299,7 +264,6 @@
 		// Hand the transform back to CSS for the next open.
 		if (motion.api) motion.api.reset(panel);
 
-		pauseVideo();
 		resetViewport();
 
 		if (lastFocused && typeof lastFocused.focus === 'function') {

@@ -211,10 +211,10 @@
 
 #yuniq-ai-root .yuniq-ai-launcher {
 	position: relative;
-	width: 56px;
-	height: 56px;
+	width: 58px;
+	height: 58px;
 	border-radius: 50%;
-	background: var(--yuniq-ai-primary);
+	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
 	color: var(--yuniq-ai-on-primary);
 	display: flex;
 	align-items: center;
@@ -345,31 +345,65 @@
 
 /* =========================================================
    HEADER
+   Two variants, chosen in the settings screen: a gradient built from
+   the site's own primary/secondary brand colors (default — the single
+   biggest thing that makes this look like *this* site's assistant
+   rather than a generic chat-widget template), or a flat solid header
+   for brands that want something quieter.
    ========================================================= */
 #yuniq-ai-root .yuniq-ai-panel-header {
+	position: relative;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 10px;
-	padding: 12px 14px;
+	padding: 16px 16px;
+	flex-shrink: 0;
+	overflow: hidden;
+	z-index: 1;
+}
+
+#yuniq-ai-root .yuniq-ai-header-solid {
 	background: var(--yuniq-ai-surface);
 	border-bottom: 1px solid var(--yuniq-ai-border);
-	flex-shrink: 0;
+}
+
+#yuniq-ai-root .yuniq-ai-header-gradient {
+	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
+}
+
+/* A soft blurred glow behind the brand mark — purely decorative, and the
+   reason the header carries `overflow:hidden` above. */
+#yuniq-ai-root .yuniq-ai-header-glow {
+	position: absolute;
+	inset-inline-start: -30px;
+	top: -60px;
+	width: 140px;
+	height: 140px;
+	border-radius: 50%;
+	background: radial-gradient(circle, rgba(255, 255, 255, 0.35) 0%, transparent 70%);
+	pointer-events: none;
+	z-index: 0;
+}
+#yuniq-ai-root .yuniq-ai-header-solid .yuniq-ai-header-glow {
+	display: none;
 }
 
 #yuniq-ai-root .yuniq-ai-header-brand {
+	position: relative;
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 11px;
 	min-width: 0;
 	flex: 1;
+	z-index: 1;
 }
 
 #yuniq-ai-root .yuniq-ai-header-logo,
 #yuniq-ai-root .yuniq-ai-header-logo-fallback {
-	width: 36px;
-	height: 36px;
-	border-radius: 10px;
+	width: 40px;
+	height: 40px;
+	border-radius: 12px;
 	flex-shrink: 0;
 	object-fit: cover;
 	background: var(--yuniq-ai-surface-alt);
@@ -377,23 +411,35 @@
 	align-items: center;
 	justify-content: center;
 	color: var(--yuniq-ai-primary);
+	box-shadow: var(--yuniq-ai-shadow-sm);
+}
+#yuniq-ai-root .yuniq-ai-header-gradient .yuniq-ai-header-logo,
+#yuniq-ai-root .yuniq-ai-header-gradient .yuniq-ai-header-logo-fallback {
+	background: rgba(255, 255, 255, 0.18);
+	color: #fff;
+	box-shadow: none;
 }
 
 #yuniq-ai-root .yuniq-ai-header-titles {
+	position: relative;
+	z-index: 1;
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
-	gap: 1px;
+	gap: 2px;
 }
 
 #yuniq-ai-root .yuniq-ai-header-name {
-	font-size: 14px;
-	font-weight: 600;
+	font-size: 14.5px;
+	font-weight: 700;
 	color: var(--yuniq-ai-text);
 	line-height: 1.35;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+#yuniq-ai-root .yuniq-ai-header-gradient .yuniq-ai-header-name {
+	color: #fff;
 }
 
 #yuniq-ai-root .yuniq-ai-header-sub {
@@ -408,6 +454,9 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+#yuniq-ai-root .yuniq-ai-header-gradient .yuniq-ai-header-sub {
+	color: rgba(255, 255, 255, 0.85);
+}
 #yuniq-ai-root .yuniq-ai-header-sub::before {
 	content: "";
 	width: 6px;
@@ -415,9 +464,12 @@
 	border-radius: 50%;
 	background: var(--yuniq-ai-online);
 	flex-shrink: 0;
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--yuniq-ai-online) 25%, transparent);
 }
 
 #yuniq-ai-root .yuniq-ai-header-controls {
+	position: relative;
+	z-index: 1;
 	display: flex;
 	align-items: center;
 	gap: 4px;
@@ -427,7 +479,7 @@
 #yuniq-ai-root .yuniq-ai-ctrl-btn {
 	width: 30px;
 	height: 30px;
-	border-radius: 8px;
+	border-radius: 9px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -439,29 +491,12 @@
 	background: var(--yuniq-ai-surface-alt);
 	color: var(--yuniq-ai-text);
 }
-
-/* =========================================================
-   VIDEO
-   ========================================================= */
-#yuniq-ai-root .yuniq-ai-video-section {
-	flex-shrink: 0;
-	background: #0a0f2c;
-	line-height: 0;
+#yuniq-ai-root .yuniq-ai-header-gradient .yuniq-ai-ctrl-btn {
+	color: rgba(255, 255, 255, 0.9);
 }
-#yuniq-ai-root .yuniq-ai-video-wrapper {
-	position: relative;
-	width: 100%;
-	aspect-ratio: 16 / 9;
-	max-height: 170px;
-	overflow: hidden;
-}
-#yuniq-ai-root .yuniq-ai-video-wrapper video {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-	display: block;
+#yuniq-ai-root .yuniq-ai-header-gradient .yuniq-ai-ctrl-btn:hover {
+	background: rgba(255, 255, 255, 0.16);
+	color: #fff;
 }
 
 /* =========================================================
@@ -481,7 +516,19 @@
 #yuniq-ai-root .yuniq-ai-intro {
 	flex-shrink: 0;
 	text-align: center;
-	padding: 8px 4px 14px;
+	padding: 18px 4px 16px;
+}
+#yuniq-ai-root .yuniq-ai-intro-icon {
+	width: 52px;
+	height: 52px;
+	margin: 0 auto 12px;
+	border-radius: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--yuniq-ai-on-primary);
+	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
+	box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--yuniq-ai-primary) 55%, transparent);
 }
 #yuniq-ai-root .yuniq-ai-intro-title {
 	margin: 0 0 4px;
@@ -543,7 +590,7 @@
 
 #yuniq-ai-root .yuniq-ai-msg-user {
 	align-self: flex-start;
-	background: var(--yuniq-ai-primary);
+	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
 	color: var(--yuniq-ai-on-primary);
 	border-end-start-radius: 4px;
 }
@@ -753,7 +800,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: var(--yuniq-ai-primary);
+	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
 	color: var(--yuniq-ai-on-primary);
 	transition: transform var(--yuniq-ai-dur-fast) var(--yuniq-ai-ease),
 		opacity var(--yuniq-ai-dur-fast) linear;

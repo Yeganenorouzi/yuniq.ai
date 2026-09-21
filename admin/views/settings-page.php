@@ -25,7 +25,8 @@ $has_woo = class_exists( 'WooCommerce' );
 
 	<?php settings_errors(); ?>
 
-	<form method="post" action="options.php" id="yuniq-ai-settings-form">
+	<?php // novalidate: every field is already validated/clamped server-side in Settings::sanitize(); native constraint validation only risks silently blocking submission when the invalid field sits inside a currently-hidden tab (the browser can't scroll to focus it, so it just logs a console warning instead of showing anything). ?>
+	<form method="post" action="options.php" id="yuniq-ai-settings-form" novalidate>
 		<?php settings_fields( 'yuniq_ai_settings_group' ); ?>
 
 		<div class="yuniq-ai-tabs">
@@ -111,7 +112,7 @@ $has_woo = class_exists( 'WooCommerce' );
 								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][label]" value="<?php echo esc_attr( $action['label'] ); ?>" placeholder="عنوان کارت" style="width:110px;" />
 								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][desc]" value="<?php echo esc_attr( isset( $action['desc'] ) ? $action['desc'] : '' ); ?>" placeholder="توضیح کوتاه" style="width:110px;" />
 								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][prompt]" value="<?php echo esc_attr( $action['prompt'] ); ?>" placeholder="پرامپت AI (اگر لینک خالی باشد)" style="width:180px;" />
-								<input type="url" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][link]" value="<?php echo esc_attr( isset( $action['link'] ) ? $action['link'] : '' ); ?>" placeholder="لینک اختیاری (مثلاً /services/)" style="width:180px;" />
+								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][link]" value="<?php echo esc_attr( isset( $action['link'] ) ? $action['link'] : '' ); ?>" placeholder="لینک اختیاری (مثلاً /services/)" style="width:180px;" />
 								<button type="button" class="button yuniq-ai-remove-qa">&times;</button>
 							</div>
 						<?php endforeach; ?>
@@ -325,7 +326,7 @@ $has_woo = class_exists( 'WooCommerce' );
 							<th scope="row">اندازه پنجره</th>
 							<td>
 								<label>عرض: <input type="number" name="yuniq_ai_settings[chat_width]" value="<?php echo esc_attr( isset( $s['chat_width'] ) ? $s['chat_width'] : 400 ); ?>" min="320" max="560" style="width:80px;" /> px</label>
-								<label style="margin-right:12px;">ارتفاع: <input type="number" name="yuniq_ai_settings[chat_height]" value="<?php echo esc_attr( isset( $s['chat_height'] ) ? $s['chat_height'] : 620 ); ?>" min="400" max="800" style="width:80px;" /> px</label>
+								<label style="margin-right:12px;">ارتفاع: <input type="number" name="yuniq_ai_settings[chat_height]" value="<?php echo esc_attr( isset( $s['chat_height'] ) ? $s['chat_height'] : 860 ); ?>" min="400" max="900" style="width:80px;" /> px</label>
 							</td>
 						</tr>
 						<tr>

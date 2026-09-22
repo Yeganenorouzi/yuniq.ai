@@ -411,7 +411,14 @@
 	display: flex;
 	flex-direction: column;
 	gap: 1px;
-	white-space: nowrap;
+	/* max-content keeps the bubble from being squeezed by the narrow
+	   launcher it is positioned against; the cap makes long text wrap
+	   instead of running past the screen edge on small phones. */
+	width: max-content;
+	max-width: min(260px, calc(100vw - var(--yuniq-ai-launcher-size) - 64px));
+	white-space: normal;
+	text-align: right;
+	margin: 0;
 	background: var(--yuniq-ai-surface);
 	color: var(--yuniq-ai-text);
 	border: 1px solid var(--yuniq-ai-border);
@@ -430,11 +437,17 @@
 #yuniq-ai-root .yuniq-ai-greet-auto .yuniq-ai-launcher-tooltip {
 	animation: yuniq-ai-greet 6s var(--yuniq-ai-ease) var(--yuniq-ai-greet-delay);
 }
+/* Explicit display/margins: some themes restyle bare strong/span. */
 #yuniq-ai-root .yuniq-ai-launcher-tooltip strong {
+	display: block;
+	margin: 0;
 	font-weight: 700;
 	font-size: 13.5px;
+	color: var(--yuniq-ai-text);
 }
 #yuniq-ai-root .yuniq-ai-launcher-tooltip span {
+	display: block;
+	margin: 0;
 	color: var(--yuniq-ai-text-muted);
 	font-size: 12.5px;
 }

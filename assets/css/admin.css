@@ -950,9 +950,9 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 6px;
-	min-width: 84px;
-	padding: 10px 10px 8px;
+	gap: 5px;
+	min-width: 68px;
+	padding: 8px 8px 6px;
 	border: 1.5px solid var(--yq-border);
 	border-radius: 10px;
 	background: var(--yq-surface);
@@ -975,17 +975,18 @@
 }
 
 .yuniq-ai-choice-visual {
-	width: 40px;
-	height: 40px;
-	border-radius: 12px;
+	width: 30px;
+	height: 30px;
+	border-radius: 9px;
 	background: linear-gradient(145deg, var(--yq-primary), var(--yq-secondary));
 	color: #fff;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 }
-.yuniq-ai-choice-visual svg { width: 22px; height: 22px; }
-.yuniq-ai-choice-visual .yuniq-ai-bot { width: 30px; height: 30px; }
+.yuniq-ai-choice-visual svg { width: 16px; height: 16px; }
+.yuniq-ai-choice-visual .yuniq-ai-bot { width: 22px; height: 22px; }
+.yuniq-ai-choice-visual .dashicons { font-size: 16px; width: 16px; height: 16px; }
 
 /* Robot parts, shared by the choice card and the preview. */
 .yuniq-ai-admin-wrap .yuniq-ai-bot-visor { fill: var(--pv-secondary, var(--yq-secondary)); }
@@ -994,18 +995,18 @@
 .yuniq-ai-admin-wrap .yuniq-ai-bot-mouth { stroke: var(--pv-secondary, var(--yq-secondary)); opacity: 0.55; }
 
 .yuniq-ai-shape-demo {
-	width: 34px;
-	height: 34px;
+	width: 26px;
+	height: 26px;
 	background: var(--yq-primary);
-	border-radius: 12px;
+	border-radius: 9px;
 }
 .yuniq-ai-shape-demo-circle { border-radius: 50%; }
-.yuniq-ai-shape-demo-pill { width: 62px; border-radius: 999px; }
+.yuniq-ai-shape-demo-pill { width: 48px; border-radius: 999px; }
 
 .yuniq-ai-corner-demo {
 	position: relative;
-	width: 52px;
-	height: 36px;
+	width: 42px;
+	height: 28px;
 	border: 1.5px solid currentColor;
 	border-radius: 5px;
 	opacity: 0.8;
@@ -1315,4 +1316,196 @@
 		position: static;
 		max-width: 420px;
 	}
+}
+
+/* =========================================================
+   SETTINGS — DESIGN TAB: stacked fields, presets, jump nav
+   ========================================================= */
+.yq-card-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 12px;
+}
+.yq-card-head h2 { margin-bottom: 4px; }
+
+.yq-step {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	margin-inline-end: 6px;
+	border-radius: 7px;
+	background: var(--yq-primary-soft);
+	color: var(--yq-primary);
+	font-size: 12px;
+	font-weight: 700;
+	vertical-align: 1px;
+}
+
+.yq-field { margin: 0 0 16px; }
+.yq-field:last-child { margin-bottom: 0; }
+.yq-label {
+	display: block;
+	margin-bottom: 7px;
+	font-weight: 600;
+	color: var(--yq-text);
+}
+.yq-help {
+	margin: 6px 0 0;
+	font-size: 12px;
+	color: var(--yq-text-muted);
+	line-height: 1.7;
+}
+.yq-grid-2 {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0 20px;
+	margin-bottom: 16px;
+}
+.yq-grid-2 .yq-field { margin-bottom: 0; }
+.yq-unit {
+	font-size: 12px;
+	color: var(--yq-text-muted);
+}
+.yuniq-ai-design-fields .yuniq-ai-range input[type="range"] { width: 100%; max-width: 240px; }
+
+.yq-toggles {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	justify-content: center;
+}
+.yq-toggle-row {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.yq-choice-text {
+	min-width: 76px;
+	padding: 9px 12px;
+}
+
+.yq-greeting-fields { transition: opacity 0.15s; }
+.yq-greeting-fields.is-disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+/* Quick-start presets */
+.yq-quickstart .description { margin: 0; }
+.yq-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 14px;
+}
+.yq-preset {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 12px 6px 6px;
+	padding-inline: 6px 12px;
+	border: 1.5px solid var(--yq-border);
+	border-radius: 999px;
+	background: var(--yq-surface);
+	color: var(--yq-text);
+	font-family: inherit;
+	font-size: 12.5px;
+	cursor: pointer;
+	transition: border-color 0.15s, transform 0.15s;
+}
+.yq-preset:hover { border-color: var(--a); transform: translateY(-1px); }
+.yq-preset.is-active { border-color: var(--a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--a) 18%, transparent); }
+.yq-preset-swatch {
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: linear-gradient(135deg, var(--a), var(--b));
+}
+.yq-reset-design.button-link {
+	color: var(--yq-text-muted);
+	text-decoration: underline;
+	white-space: nowrap;
+}
+
+/* Jump nav */
+.yq-jump {
+	position: sticky;
+	top: 32px;
+	z-index: 5;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 16px;
+	padding: 8px;
+	background: color-mix(in srgb, var(--yq-bg, #f6f7fb) 92%, transparent);
+	backdrop-filter: blur(6px);
+	border: 1px solid var(--yq-border);
+	border-radius: 10px;
+}
+.yq-jump a {
+	padding: 5px 12px;
+	border-radius: 7px;
+	color: var(--yq-text-muted);
+	text-decoration: none;
+	font-size: 12.5px;
+}
+.yq-jump a:hover,
+.yq-jump a:focus-visible {
+	background: var(--yq-primary-soft);
+	color: var(--yq-primary);
+}
+.yuniq-ai-design-fields section,
+.yuniq-ai-design-fields details { scroll-margin-top: 96px; }
+
+/* "More settings" collapsible */
+.yq-more > summary {
+	list-style: none;
+	cursor: pointer;
+}
+.yq-more > summary::-webkit-details-marker { display: none; }
+.yq-more > summary h2 { margin: 0; }
+.yq-more > summary small {
+	margin-inline-start: 8px;
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--yq-text-muted);
+}
+.yq-more[open] > summary { margin-bottom: 18px; }
+
+/* Tiny demos inside the header-style and theme choices */
+.yq-header-demo,
+.yq-theme-demo {
+	width: 42px;
+	height: 28px;
+	border-radius: 6px;
+	border: 1px solid var(--yq-border);
+	background: #fff;
+	position: relative;
+	overflow: hidden;
+}
+.yq-header-demo::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: 10px;
+}
+.yq-header-demo-gradient::before { background: linear-gradient(90deg, var(--yq-primary), var(--yq-secondary)); }
+.yq-header-demo-brand::before    { background: var(--yq-primary); }
+.yq-header-demo-solid::before    { background: #fff; border-bottom: 1px solid var(--yq-border); }
+.yq-theme-demo-light { background: #fff; }
+.yq-theme-demo-dark  { background: #1a1d25; }
+.yq-theme-demo-auto  { background: linear-gradient(135deg, #fff 50%, #1a1d25 50%); }
+
+@media (max-width: 782px) {
+	.yq-grid-2 { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+	.yq-jump { top: 46px; }
+}
+.yq-grid-2 + .yq-help {
+	margin: -8px 0 18px;
 }

@@ -12,6 +12,7 @@ use Yuniq\Ai\Ai\Client;
 use Yuniq\Ai\Contracts\HookableInterface;
 use Yuniq\Ai\Rest\ChatController;
 use Yuniq\Ai\Settings;
+use Yuniq\Ai\Support\Assets;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -171,7 +172,7 @@ final class Widget implements HookableInterface {
 			self::HANDLE,
 			YUNIQ_AI_URL . 'assets/css/public.css',
 			array(),
-			YUNIQ_AI_VERSION
+			Assets::version( 'assets/css/public.css' )
 		);
 
 		$custom_css = trim( (string) $this->settings->get( 'custom_css', '' ) );
@@ -183,7 +184,7 @@ final class Widget implements HookableInterface {
 			self::HANDLE,
 			YUNIQ_AI_URL . 'assets/js/public.js',
 			array(),
-			YUNIQ_AI_VERSION,
+			Assets::version( 'assets/js/public.js' ),
 			true
 		);
 
@@ -413,19 +414,19 @@ final class Widget implements HookableInterface {
 	 */
 	public static function icon_markup( $icon, $avatar = '' ) {
 		if ( 'avatar' === $icon && $avatar ) {
-			return '<img src="' . esc_url( $avatar ) . '" alt="" class="yuniq-ai-launcher-avatar" />';
+			return '<img src="' . esc_url( $avatar ) . '" alt="" class="yuniq-ai-launcher-avatar" width="62" height="62" />';
 		}
 
 		switch ( $icon ) {
 			case 'chat':
-				return '<svg class="yuniq-ai-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+				return '<svg class="yuniq-ai-glyph" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 			case 'sparkle':
-				return '<svg class="yuniq-ai-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" opacity="0.75"/></svg>';
+				return '<svg class="yuniq-ai-glyph" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" opacity="0.75"/></svg>';
 			case 'headset':
-				return '<svg class="yuniq-ai-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><path d="M20 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM4 16a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2z"/><path d="M18 18v.5a2.5 2.5 0 0 1-2.5 2.5H13"/></svg>';
+				return '<svg class="yuniq-ai-glyph" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><path d="M20 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM4 16a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2z"/><path d="M18 18v.5a2.5 2.5 0 0 1-2.5 2.5H13"/></svg>';
 		}
 
-		return '<svg class="yuniq-ai-bot" viewBox="0 0 48 48" aria-hidden="true" focusable="false">'
+		return '<svg class="yuniq-ai-bot" width="42" height="42" viewBox="0 0 48 48" aria-hidden="true" focusable="false">'
 			. '<line x1="24" y1="5" x2="24" y2="11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
 			. '<circle class="yuniq-ai-bot-antenna" cx="24" cy="5" r="3"/>'
 			. '<rect x="4" y="21" width="4.5" height="10" rx="2.25" fill="currentColor" opacity="0.75"/>'

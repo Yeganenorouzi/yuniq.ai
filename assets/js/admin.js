@@ -284,6 +284,71 @@
 
 	updatePreview();
 
+	/* ---------- Design tab: presets, reset, jump links ---------- */
+	var stylePresets = {
+		classic: { primary_color: '#263DFF', secondary_color: '#111B55', header_style: 'gradient', launcher_bg: 'gradient' },
+		violet:  { primary_color: '#7C3AED', secondary_color: '#2E1065', header_style: 'gradient', launcher_bg: 'gradient' },
+		ocean:   { primary_color: '#0891B2', secondary_color: '#164E63', header_style: 'gradient', launcher_bg: 'gradient' },
+		emerald: { primary_color: '#059669', secondary_color: '#064E3B', header_style: 'brand', launcher_bg: 'gradient' },
+		sunset:  { primary_color: '#F97316', secondary_color: '#9A3412', header_style: 'gradient', launcher_bg: 'gradient' },
+		rose:    { primary_color: '#E11D48', secondary_color: '#881337', header_style: 'brand', launcher_bg: 'solid' },
+		minimal: { primary_color: '#111827', secondary_color: '#374151', header_style: 'solid', launcher_bg: 'solid' }
+	};
+
+	function setField(key, value) {
+		var $f = field(key);
+		if (!$f.length) return;
+
+		if ($f.is(':radio')) {
+			$f.filter('[value="' + value + '"]').prop('checked', true);
+		} else if ($f.is(':checkbox')) {
+			$f.prop('checked', !!value);
+		} else if ($f.hasClass('yuniq-ai-color-picker') && $.fn.wpColorPicker) {
+			if (value) {
+				$f.wpColorPicker('color', value);
+			} else {
+				$f.val('');
+				$f.closest('.wp-picker-container').find('.wp-color-result').css('background-color', '');
+			}
+		} else {
+			$f.val(value).trigger('input');
+		}
+	}
+
+	function applyValues(values) {
+		Object.keys(values).forEach(function (key) { setField(key, values[key]); });
+		updatePreview();
+	}
+
+	$(document).on('click', '.yq-preset', function () {
+		var preset = stylePresets[$(this).data('preset')];
+		if (!preset) return;
+		$('.yq-preset').removeClass('is-active');
+		$(this).addClass('is-active');
+		applyValues(preset);
+	});
+
+	$(document).on('click', '.yq-reset-design', function () {
+		if (!confirm(i18n.confirmResetDesign || 'همه تنظیمات طراحی به حالت اولیه برگردد؟')) return;
+		$('.yq-preset').removeClass('is-active');
+		applyValues($(this).data('defaults') || {});
+	});
+
+	$(document).on('click', '.yq-jump a', function (e) {
+		var target = document.querySelector($(this).attr('href'));
+		if (!target) return;
+		e.preventDefault();
+		if (target.tagName === 'DETAILS') target.open = true;
+		target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	});
+
+	// Greeting text fields are dimmed while the greeting is switched off.
+	function toggleGreetingFields() {
+		$('.yq-greeting-fields').toggleClass('is-disabled', !fieldVal('greeting_enabled'));
+	}
+	$('#yuniq-ai-settings-form').on('change', '[name="yuniq_ai_settings[greeting_enabled]"]', toggleGreetingFields);
+	toggleGreetingFields();
+
 	/* ---------- Media pickers ---------- */
 	function openMediaPicker(title, targetSelector) {
 		var frame = wp.media({

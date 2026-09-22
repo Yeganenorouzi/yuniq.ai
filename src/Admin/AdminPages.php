@@ -15,6 +15,7 @@ use Yuniq\Ai\Kb\Indexer;
 use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\LiveSupport\Repository as LiveSupport;
 use Yuniq\Ai\Settings;
+use Yuniq\Ai\Support\Assets;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -230,7 +231,7 @@ final class AdminPages implements HookableInterface {
 			'yuniq-ai-admin',
 			YUNIQ_AI_URL . 'assets/css/admin.css',
 			array(),
-			YUNIQ_AI_VERSION
+			Assets::version( 'assets/css/admin.css' )
 		);
 
 		wp_enqueue_style( 'wp-color-picker' );
@@ -240,7 +241,7 @@ final class AdminPages implements HookableInterface {
 			'yuniq-ai-admin',
 			YUNIQ_AI_URL . 'assets/js/admin.js',
 			array( 'jquery', 'wp-color-picker' ),
-			YUNIQ_AI_VERSION,
+			Assets::version( 'assets/js/admin.js' ),
 			true
 		);
 
@@ -261,6 +262,7 @@ final class AdminPages implements HookableInterface {
 					'getKey'            => __( 'دریافت کلید API', 'yuniq-ai' ),
 					'replaceEndpoint'   => __( 'آدرس فعلی با آدرس این سرویس جایگزین شود؟', 'yuniq-ai' ),
 					'replacePrompt'     => __( 'متن فعلی پرامپت سیستم با این قالب جایگزین شود؟', 'yuniq-ai' ),
+					'confirmResetDesign' => __( 'همه تنظیمات طراحی به حالت اولیه برگردد؟ (تا ذخیره نکنید در سایت اعمال نمی‌شود)', 'yuniq-ai' ),
 					'crawling'        => __( 'در حال ایندکس‌گذاری...', 'yuniq-ai' ),
 					'completed'       => __( 'ایندکس‌گذاری با موفقیت انجام شد!', 'yuniq-ai' ),
 					'completedShort'  => __( 'تکمیل‌شده', 'yuniq-ai' ),

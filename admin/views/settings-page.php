@@ -25,6 +25,39 @@ $yq_switch = function ( $key ) use ( $s ) {
 	</label>
 	<?php
 };
+
+/**
+ * Print a slider bound to one numeric setting, with its live value.
+ *
+ * @param string     $key  Setting name.
+ * @param int|float  $min  Lower bound.
+ * @param int|float  $max  Upper bound.
+ * @param int|float  $step Step.
+ * @param string     $unit Unit shown after the value.
+ */
+$yq_range = function ( $key, $min, $max, $step, $unit ) use ( $s ) {
+	$id = 'yuniq-ai-' . str_replace( '_', '-', $key );
+	?>
+	<div class="yuniq-ai-range">
+		<input type="range" name="yuniq_ai_settings[<?php echo esc_attr( $key ); ?>]" id="<?php echo esc_attr( $id ); ?>" value="<?php echo esc_attr( $s[ $key ] ); ?>" min="<?php echo esc_attr( $min ); ?>" max="<?php echo esc_attr( $max ); ?>" step="<?php echo esc_attr( $step ); ?>" />
+		<output for="<?php echo esc_attr( $id ); ?>"><?php echo esc_html( $s[ $key ] ); ?></output> <span class="yq-unit"><?php echo esc_html( $unit ); ?></span>
+	</div>
+	<?php
+};
+
+// Values the "back to default" button restores on the Design tab.
+$yq_design_defaults = array_intersect_key(
+	\Yuniq\Ai\Settings::defaults(),
+	array_flip(
+		array(
+			'primary_color', 'secondary_color', 'header_style', 'theme', 'launcher_icon', 'launcher_shape',
+			'launcher_label', 'launcher_size', 'launcher_bg', 'show_online_badge', 'enable_animations',
+			'greeting_enabled', 'greeting_title', 'greeting_text', 'greeting_delay', 'widget_position',
+			'custom_position_x', 'custom_position_y', 'chat_width', 'chat_height', 'user_bubble_color',
+			'bot_bubble_color', 'font_family', 'custom_font', 'font_size', 'border_radius',
+		)
+	)
+);
 ?>
 <div class="wrap yuniq-ai-admin-wrap" dir="rtl">
 	<div class="yuniq-ai-header">
@@ -377,233 +410,254 @@ $yq_switch = function ( $key ) use ( $s ) {
 				<div class="yuniq-ai-design-layout">
 					<div class="yuniq-ai-design-fields">
 
-						<div class="yuniq-ai-card">
-							<h2>دکمه شناور</h2>
-							<table class="form-table">
-								<tr>
-									<th scope="row">تصویر دکمه</th>
-									<td>
-										<div class="yuniq-ai-choices">
-											<?php
-											$icon_labels = array(
-												'bot'     => 'ربات',
-												'chat'    => 'حباب گفتگو',
-												'sparkle' => 'جرقه AI',
-												'headset' => 'پشتیبان',
-												'avatar'  => 'تصویر دلخواه',
-											);
-											foreach ( $icon_labels as $icon_key => $icon_label ) :
-												?>
-												<label class="yuniq-ai-choice yuniq-ai-choice-icon">
-													<input type="radio" name="yuniq_ai_settings[launcher_icon]" value="<?php echo esc_attr( $icon_key ); ?>" <?php checked( $s['launcher_icon'], $icon_key ); ?> />
-													<span class="yuniq-ai-choice-box">
-														<span class="yuniq-ai-choice-visual">
-															<?php
-															if ( 'avatar' === $icon_key ) {
-																echo '<span class="dashicons dashicons-format-image" aria-hidden="true"></span>';
-															} else {
-																echo \Yuniq\Ai\Frontend\Widget::icon_markup( $icon_key ); // phpcs:ignore WordPress.Security.EscapeOutput -- static SVG.
-															}
-															?>
-														</span>
-														<?php echo esc_html( $icon_label ); ?>
-													</span>
-												</label>
-											<?php endforeach; ?>
-										</div>
-									</td>
-								</tr>
-								<tr class="yuniq-ai-when-avatar">
-									<th scope="row"><label for="yuniq-ai-avatar-url">تصویر دلخواه</label></th>
-									<td>
-										<input type="url" name="yuniq_ai_settings[avatar_url]" id="yuniq-ai-avatar-url" value="<?php echo esc_attr( $s['avatar_url'] ); ?>" class="regular-text" dir="ltr" />
-										<button type="button" class="button" id="yuniq-ai-upload-avatar">انتخاب از رسانه</button>
-										<p class="description">تصویر مربعی (مثلاً ۲۰۰×۲۰۰) با پس‌زمینه شفاف یا عکس کاراکتر برند شما. اگر لوگوی هدر خالی باشد، همین تصویر در هدر پنل هم استفاده می‌شود.</p>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row">شکل دکمه</th>
-									<td>
-										<div class="yuniq-ai-choices">
-											<?php foreach ( array( 'squircle' => 'مربع گرد', 'circle' => 'دایره', 'pill' => 'کپسولی با متن' ) as $shape_key => $shape_label ) : ?>
-												<label class="yuniq-ai-choice">
-													<input type="radio" name="yuniq_ai_settings[launcher_shape]" value="<?php echo esc_attr( $shape_key ); ?>" <?php checked( $s['launcher_shape'], $shape_key ); ?> />
-													<span class="yuniq-ai-choice-box"><span class="yuniq-ai-shape-demo yuniq-ai-shape-demo-<?php echo esc_attr( $shape_key ); ?>"></span><?php echo esc_html( $shape_label ); ?></span>
-												</label>
-											<?php endforeach; ?>
-										</div>
-									</td>
-								</tr>
-								<tr class="yuniq-ai-when-pill">
-									<th scope="row"><label for="yuniq-ai-launcher-label">متن روی دکمه</label></th>
-									<td><input type="text" name="yuniq_ai_settings[launcher_label]" id="yuniq-ai-launcher-label" value="<?php echo esc_attr( $s['launcher_label'] ); ?>" class="regular-text" /></td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-launcher-size">اندازه دکمه</label></th>
-									<td>
-										<div class="yuniq-ai-range">
-											<input type="range" name="yuniq_ai_settings[launcher_size]" id="yuniq-ai-launcher-size" value="<?php echo esc_attr( $s['launcher_size'] ); ?>" min="44" max="88" step="2" />
-											<output for="yuniq-ai-launcher-size"><?php echo esc_html( $s['launcher_size'] ); ?></output> px
-										</div>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-launcher-bg">رنگ دکمه</label></th>
-									<td>
-										<select name="yuniq_ai_settings[launcher_bg]" id="yuniq-ai-launcher-bg">
-											<option value="gradient" <?php selected( $s['launcher_bg'], 'gradient' ); ?>>گرادیان (رنگ اصلی ← ثانویه)</option>
-											<option value="solid" <?php selected( $s['launcher_bg'], 'solid' ); ?>>تک‌رنگ (رنگ اصلی)</option>
-										</select>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row">نشان «آنلاین»</th>
-									<td><?php $yq_switch( 'show_online_badge' ); ?> <span class="description">نقطه سبز گوشه دکمه</span></td>
-								</tr>
-								<tr>
-									<th scope="row">انیمیشن‌ها</th>
-									<td><?php $yq_switch( 'enable_animations' ); ?> <span class="description">حرکت ربات، باز و بسته شدن نرم پنل</span></td>
-								</tr>
-							</table>
+						<div class="yuniq-ai-card yq-quickstart">
+							<div class="yq-card-head">
+								<div>
+									<h2>شروع سریع</h2>
+									<p class="description">یک قالب آماده انتخاب کنید و بعد هر جزئی را که خواستید تغییر دهید. تا «ذخیره تنظیمات» را نزنید، چیزی در سایت عوض نمی‌شود.</p>
+								</div>
+								<button type="button" class="button button-link yq-reset-design" data-defaults="<?php echo esc_attr( wp_json_encode( $yq_design_defaults ) ); ?>">بازگشت به پیش‌فرض</button>
+							</div>
+							<div class="yq-presets">
+								<?php
+								$yq_style_presets = array(
+									'classic' => array( 'آبی کلاسیک', '#263DFF', '#111B55' ),
+									'violet'  => array( 'بنفش مدرن', '#7C3AED', '#2E1065' ),
+									'ocean'   => array( 'فیروزه‌ای', '#0891B2', '#164E63' ),
+									'emerald' => array( 'سبز', '#059669', '#064E3B' ),
+									'sunset'  => array( 'نارنجی گرم', '#F97316', '#9A3412' ),
+									'rose'    => array( 'قرمز', '#E11D48', '#881337' ),
+									'minimal' => array( 'مشکی مینیمال', '#111827', '#374151' ),
+								);
+								foreach ( $yq_style_presets as $preset_key => $preset ) :
+									?>
+									<button type="button" class="yq-preset" data-preset="<?php echo esc_attr( $preset_key ); ?>" style="--a:<?php echo esc_attr( $preset[1] ); ?>;--b:<?php echo esc_attr( $preset[2] ); ?>">
+										<span class="yq-preset-swatch"></span>
+										<?php echo esc_html( $preset[0] ); ?>
+									</button>
+								<?php endforeach; ?>
+							</div>
 						</div>
 
-						<div class="yuniq-ai-card">
-							<h2>حباب خوش‌آمد کنار دکمه</h2>
-							<table class="form-table">
-								<tr>
-									<th scope="row">نمایش حباب</th>
-									<td><?php $yq_switch( 'greeting_enabled' ); ?></td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-greeting-title">عنوان</label></th>
-									<td><input type="text" name="yuniq_ai_settings[greeting_title]" id="yuniq-ai-greeting-title" value="<?php echo esc_attr( $s['greeting_title'] ); ?>" class="regular-text" /></td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-greeting-text">متن</label></th>
-									<td><input type="text" name="yuniq_ai_settings[greeting_text]" id="yuniq-ai-greeting-text" value="<?php echo esc_attr( $s['greeting_text'] ); ?>" class="regular-text" /></td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-greeting-delay">نمایش خودکار پس از</label></th>
-									<td>
-										<input type="number" name="yuniq_ai_settings[greeting_delay]" id="yuniq-ai-greeting-delay" value="<?php echo esc_attr( $s['greeting_delay'] ); ?>" min="0" max="60" class="small-text" /> ثانیه
-										<p class="description">حباب چند ثانیه بعد از باز شدن صفحه خودش ظاهر و بعد محو می‌شود. ۰ = فقط وقتی ماوس روی دکمه برود.</p>
-									</td>
-								</tr>
-							</table>
-						</div>
+						<nav class="yq-jump" aria-label="بخش‌های طراحی">
+							<a href="#yq-sec-colors">رنگ‌ها</a>
+							<a href="#yq-sec-launcher">دکمه شناور</a>
+							<a href="#yq-sec-greeting">حباب خوش‌آمد</a>
+							<a href="#yq-sec-position">جایگاه و اندازه</a>
+							<a href="#yq-sec-more">تنظیمات بیشتر</a>
+						</nav>
 
-						<div class="yuniq-ai-card">
-							<h2>رنگ‌ها و فونت</h2>
-							<table class="form-table">
-								<tr>
-									<th scope="row">رنگ اصلی</th>
-									<td><input type="text" name="yuniq_ai_settings[primary_color]" value="<?php echo esc_attr( $s['primary_color'] ); ?>" class="yuniq-ai-color-picker" data-default-color="#263DFF" /></td>
-								</tr>
-								<tr>
-									<th scope="row">رنگ ثانویه</th>
-									<td><input type="text" name="yuniq_ai_settings[secondary_color]" value="<?php echo esc_attr( $s['secondary_color'] ); ?>" class="yuniq-ai-color-picker" data-default-color="#111B55" /></td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-header-style">هدر پنل</label></th>
-									<td>
-										<select name="yuniq_ai_settings[header_style]" id="yuniq-ai-header-style">
-											<option value="gradient" <?php selected( $s['header_style'], 'gradient' ); ?>>گرادیان (رنگ اصلی ← ثانویه)</option>
-											<option value="brand" <?php selected( $s['header_style'], 'brand' ); ?>>تک‌رنگ (رنگ اصلی)</option>
-											<option value="solid" <?php selected( $s['header_style'], 'solid' ); ?>>ساده (سفید / تیره، مینیمال)</option>
-										</select>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row">رنگ پیام بازدیدکننده</th>
-									<td>
-										<input type="text" name="yuniq_ai_settings[user_bubble_color]" value="<?php echo esc_attr( $s['user_bubble_color'] ); ?>" class="yuniq-ai-color-picker" />
-										<p class="description">خالی = گرادیان رنگ‌های برند. رنگ متن خودکار (سفید یا تیره) انتخاب می‌شود تا خوانا بماند.</p>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row">رنگ پیام دستیار</th>
-									<td>
-										<input type="text" name="yuniq_ai_settings[bot_bubble_color]" value="<?php echo esc_attr( $s['bot_bubble_color'] ); ?>" class="yuniq-ai-color-picker" />
-										<p class="description">خالی = سفید در حالت روشن و خاکستری تیره در حالت تاریک.</p>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-theme">حالت رنگی</label></th>
-									<td>
-										<select name="yuniq_ai_settings[theme]" id="yuniq-ai-theme">
-											<option value="auto" <?php selected( $s['theme'], 'auto' ); ?>>خودکار (بر اساس تنظیم دستگاه کاربر)</option>
-											<option value="light" <?php selected( $s['theme'], 'light' ); ?>>همیشه روشن</option>
-											<option value="dark" <?php selected( $s['theme'], 'dark' ); ?>>همیشه تاریک</option>
-										</select>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-font-family">فونت</label></th>
-									<td>
-										<select name="yuniq_ai_settings[font_family]" id="yuniq-ai-font-family">
-											<option value="vazirmatn" <?php selected( $s['font_family'], 'vazirmatn' ); ?>>وزیرمتن (همراه افزونه)</option>
-											<option value="inherit" <?php selected( $s['font_family'], 'inherit' ); ?>>فونت قالب سایت</option>
-											<option value="custom" <?php selected( $s['font_family'], 'custom' ); ?>>نام فونت دلخواه</option>
-										</select>
-										<input type="text" name="yuniq_ai_settings[custom_font]" id="yuniq-ai-custom-font" value="<?php echo esc_attr( $s['custom_font'] ); ?>" class="regular-text yuniq-ai-when-custom-font" placeholder="IRANSansX, Yekan Bakh" dir="ltr" />
-										<p class="description yuniq-ai-when-custom-font">فونت باید از قبل در قالب سایت بارگذاری شده باشد؛ اینجا فقط نامش را بنویسید.</p>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-font-size">اندازه متن</label></th>
-									<td>
-										<div class="yuniq-ai-range">
-											<input type="range" name="yuniq_ai_settings[font_size]" id="yuniq-ai-font-size" value="<?php echo esc_attr( $s['font_size'] ); ?>" min="12" max="18" step="1" />
-											<output for="yuniq-ai-font-size"><?php echo esc_html( $s['font_size'] ); ?></output> px
-										</div>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row"><label for="yuniq-ai-radius">گردی گوشه‌های پنل</label></th>
-									<td>
-										<div class="yuniq-ai-range">
-											<input type="range" name="yuniq_ai_settings[border_radius]" id="yuniq-ai-radius" value="<?php echo esc_attr( $s['border_radius'] ); ?>" min="0" max="32" step="1" />
-											<output for="yuniq-ai-radius"><?php echo esc_html( $s['border_radius'] ); ?></output> px
-										</div>
-									</td>
-								</tr>
-							</table>
-						</div>
+						<section class="yuniq-ai-card" id="yq-sec-colors">
+							<h2><span class="yq-step">۱</span> رنگ‌ها</h2>
+							<div class="yq-grid-2">
+								<div class="yq-field">
+									<span class="yq-label">رنگ اصلی</span>
+									<input type="text" name="yuniq_ai_settings[primary_color]" value="<?php echo esc_attr( $s['primary_color'] ); ?>" class="yuniq-ai-color-picker" data-default-color="#263DFF" />
+								</div>
+								<div class="yq-field">
+									<span class="yq-label">رنگ دوم (برای گرادیان)</span>
+									<input type="text" name="yuniq_ai_settings[secondary_color]" value="<?php echo esc_attr( $s['secondary_color'] ); ?>" class="yuniq-ai-color-picker" data-default-color="#111B55" />
+								</div>
+							</div>
+							<div class="yq-field">
+								<span class="yq-label">سبک بالای پنجره گفتگو</span>
+								<div class="yuniq-ai-choices">
+									<?php foreach ( array( 'gradient' => 'گرادیان', 'brand' => 'تک‌رنگ', 'solid' => 'ساده و روشن' ) as $hs_key => $hs_label ) : ?>
+										<label class="yuniq-ai-choice">
+											<input type="radio" name="yuniq_ai_settings[header_style]" value="<?php echo esc_attr( $hs_key ); ?>" <?php checked( $s['header_style'], $hs_key ); ?> />
+											<span class="yuniq-ai-choice-box"><span class="yq-header-demo yq-header-demo-<?php echo esc_attr( $hs_key ); ?>"></span><?php echo esc_html( $hs_label ); ?></span>
+										</label>
+									<?php endforeach; ?>
+								</div>
+							</div>
+							<div class="yq-field">
+								<span class="yq-label">روشن یا تاریک</span>
+								<div class="yuniq-ai-choices">
+									<?php foreach ( array( 'auto' => 'خودکار', 'light' => 'همیشه روشن', 'dark' => 'همیشه تاریک' ) as $th_key => $th_label ) : ?>
+										<label class="yuniq-ai-choice">
+											<input type="radio" name="yuniq_ai_settings[theme]" value="<?php echo esc_attr( $th_key ); ?>" <?php checked( $s['theme'], $th_key ); ?> />
+											<span class="yuniq-ai-choice-box"><span class="yq-theme-demo yq-theme-demo-<?php echo esc_attr( $th_key ); ?>"></span><?php echo esc_html( $th_label ); ?></span>
+										</label>
+									<?php endforeach; ?>
+								</div>
+								<p class="yq-help">«خودکار» یعنی مطابق تنظیم گوشی یا کامپیوتر بازدیدکننده.</p>
+							</div>
+						</section>
 
-						<div class="yuniq-ai-card">
-							<h2>جایگاه و اندازه</h2>
-							<table class="form-table">
-								<tr>
-									<th scope="row">گوشه صفحه</th>
-									<td>
-										<div class="yuniq-ai-choices yuniq-ai-corner-choices">
-											<?php foreach ( array( 'top-left' => 'بالا چپ', 'top-right' => 'بالا راست', 'bottom-left' => 'پایین چپ', 'bottom-right' => 'پایین راست' ) as $pos_key => $pos_label ) : ?>
-												<label class="yuniq-ai-choice">
-													<input type="radio" name="yuniq_ai_settings[widget_position]" value="<?php echo esc_attr( $pos_key ); ?>" <?php checked( $s['widget_position'], $pos_key ); ?> />
-													<span class="yuniq-ai-choice-box"><span class="yuniq-ai-corner-demo yuniq-ai-corner-<?php echo esc_attr( $pos_key ); ?>"></span><?php echo esc_html( $pos_label ); ?></span>
-												</label>
-											<?php endforeach; ?>
-										</div>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row">فاصله از لبه‌ها</th>
-									<td>
-										<label>افقی <input type="number" name="yuniq_ai_settings[custom_position_x]" value="<?php echo esc_attr( $s['custom_position_x'] ); ?>" min="0" max="400" class="small-text" /> px</label>
-										<label style="margin-right:12px;">عمودی <input type="number" name="yuniq_ai_settings[custom_position_y]" value="<?php echo esc_attr( $s['custom_position_y'] ); ?>" min="0" max="400" class="small-text" /> px</label>
-										<p class="description">اگر دکمه روی دکمه‌های دیگر سایت (مثل «بازگشت به بالا» یا واتس‌اپ) افتاده، این عدد را بیشتر کنید. در موبایل حداکثر ۱۶ پیکسل در نظر گرفته می‌شود.</p>
-									</td>
-								</tr>
-								<tr>
-									<th scope="row">اندازه پنجره گفتگو</th>
-									<td>
-										<label>عرض <input type="number" name="yuniq_ai_settings[chat_width]" value="<?php echo esc_attr( $s['chat_width'] ); ?>" min="320" max="560" class="small-text" /> px</label>
-										<label style="margin-right:12px;">ارتفاع <input type="number" name="yuniq_ai_settings[chat_height]" value="<?php echo esc_attr( $s['chat_height'] ); ?>" min="400" max="900" class="small-text" /> px</label>
-										<p class="description">در موبایل پنجره همیشه تمام‌صفحه باز می‌شود.</p>
-									</td>
-								</tr>
-							</table>
-						</div>
+						<section class="yuniq-ai-card" id="yq-sec-launcher">
+							<h2><span class="yq-step">۲</span> دکمه شناور</h2>
+							<div class="yq-field">
+								<span class="yq-label">تصویر روی دکمه</span>
+								<div class="yuniq-ai-choices">
+									<?php
+									$icon_labels = array(
+										'bot'     => 'ربات',
+										'chat'    => 'گفتگو',
+										'sparkle' => 'جرقه',
+										'headset' => 'پشتیبان',
+										'avatar'  => 'عکس دلخواه',
+									);
+									foreach ( $icon_labels as $icon_key => $icon_label ) :
+										?>
+										<label class="yuniq-ai-choice yuniq-ai-choice-icon">
+											<input type="radio" name="yuniq_ai_settings[launcher_icon]" value="<?php echo esc_attr( $icon_key ); ?>" <?php checked( $s['launcher_icon'], $icon_key ); ?> />
+											<span class="yuniq-ai-choice-box">
+												<span class="yuniq-ai-choice-visual">
+													<?php
+													if ( 'avatar' === $icon_key ) {
+														echo '<span class="dashicons dashicons-format-image" aria-hidden="true"></span>';
+													} else {
+														echo \Yuniq\Ai\Frontend\Widget::icon_markup( $icon_key ); // phpcs:ignore WordPress.Security.EscapeOutput -- static SVG.
+													}
+													?>
+												</span>
+												<?php echo esc_html( $icon_label ); ?>
+											</span>
+										</label>
+									<?php endforeach; ?>
+								</div>
+							</div>
+							<div class="yq-field yuniq-ai-when-avatar">
+								<label class="yq-label" for="yuniq-ai-avatar-url">عکس دلخواه</label>
+								<div class="yuniq-ai-inline">
+									<input type="url" name="yuniq_ai_settings[avatar_url]" id="yuniq-ai-avatar-url" value="<?php echo esc_attr( $s['avatar_url'] ); ?>" class="regular-text" dir="ltr" placeholder="https://" />
+									<button type="button" class="button" id="yuniq-ai-upload-avatar">انتخاب از رسانه</button>
+								</div>
+								<p class="yq-help">بهترین نتیجه: تصویر مربعی، حداقل ۱۲۸×۱۲۸ پیکسل.</p>
+							</div>
+							<div class="yq-field">
+								<span class="yq-label">شکل دکمه</span>
+								<div class="yuniq-ai-choices">
+									<?php foreach ( array( 'squircle' => 'مربع گرد', 'circle' => 'دایره', 'pill' => 'همراه متن' ) as $shape_key => $shape_label ) : ?>
+										<label class="yuniq-ai-choice">
+											<input type="radio" name="yuniq_ai_settings[launcher_shape]" value="<?php echo esc_attr( $shape_key ); ?>" <?php checked( $s['launcher_shape'], $shape_key ); ?> />
+											<span class="yuniq-ai-choice-box"><span class="yuniq-ai-shape-demo yuniq-ai-shape-demo-<?php echo esc_attr( $shape_key ); ?>"></span><?php echo esc_html( $shape_label ); ?></span>
+										</label>
+									<?php endforeach; ?>
+								</div>
+							</div>
+							<div class="yq-field yuniq-ai-when-pill">
+								<label class="yq-label" for="yuniq-ai-launcher-label">متن روی دکمه</label>
+								<input type="text" name="yuniq_ai_settings[launcher_label]" id="yuniq-ai-launcher-label" value="<?php echo esc_attr( $s['launcher_label'] ); ?>" class="regular-text" maxlength="30" />
+							</div>
+							<div class="yq-field">
+								<label class="yq-label" for="yuniq-ai-launcher-size">اندازه دکمه</label>
+								<?php $yq_range( 'launcher_size', 44, 88, 2, 'px' ); ?>
+							</div>
+							<div class="yq-grid-2">
+								<div class="yq-field">
+									<span class="yq-label">رنگ دکمه</span>
+									<div class="yuniq-ai-choices">
+										<?php foreach ( array( 'gradient' => 'گرادیان', 'solid' => 'تک‌رنگ' ) as $bg_key => $bg_label ) : ?>
+											<label class="yuniq-ai-choice">
+												<input type="radio" name="yuniq_ai_settings[launcher_bg]" value="<?php echo esc_attr( $bg_key ); ?>" <?php checked( $s['launcher_bg'], $bg_key ); ?> />
+												<span class="yuniq-ai-choice-box yq-choice-text"><?php echo esc_html( $bg_label ); ?></span>
+											</label>
+										<?php endforeach; ?>
+									</div>
+								</div>
+								<div class="yq-field yq-toggles">
+									<label class="yq-toggle-row"><?php $yq_switch( 'show_online_badge' ); ?> نقطه سبز «آنلاین»</label>
+									<label class="yq-toggle-row"><?php $yq_switch( 'enable_animations' ); ?> حرکت و انیمیشن</label>
+								</div>
+							</div>
+						</section>
+
+						<section class="yuniq-ai-card" id="yq-sec-greeting">
+							<div class="yq-card-head">
+								<h2><span class="yq-step">۳</span> حباب خوش‌آمد</h2>
+								<label class="yq-toggle-row"><?php $yq_switch( 'greeting_enabled' ); ?> نمایش</label>
+							</div>
+							<div class="yq-greeting-fields">
+								<div class="yq-grid-2">
+									<div class="yq-field">
+										<label class="yq-label" for="yuniq-ai-greeting-title">خط اول</label>
+										<input type="text" name="yuniq_ai_settings[greeting_title]" id="yuniq-ai-greeting-title" value="<?php echo esc_attr( $s['greeting_title'] ); ?>" class="widefat" maxlength="40" />
+									</div>
+									<div class="yq-field">
+										<label class="yq-label" for="yuniq-ai-greeting-text">خط دوم</label>
+										<input type="text" name="yuniq_ai_settings[greeting_text]" id="yuniq-ai-greeting-text" value="<?php echo esc_attr( $s['greeting_text'] ); ?>" class="widefat" maxlength="60" />
+									</div>
+								</div>
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-greeting-delay">چند ثانیه بعد از باز شدن صفحه خودش ظاهر شود؟</label>
+									<?php $yq_range( 'greeting_delay', 0, 30, 1, 'ثانیه' ); ?>
+									<p class="yq-help">۰ = خودکار ظاهر نشود؛ فقط وقتی ماوس روی دکمه برود.</p>
+								</div>
+							</div>
+						</section>
+
+						<section class="yuniq-ai-card" id="yq-sec-position">
+							<h2><span class="yq-step">۴</span> جایگاه و اندازه</h2>
+							<div class="yq-field">
+								<span class="yq-label">گوشه صفحه</span>
+								<div class="yuniq-ai-choices yuniq-ai-corner-choices">
+									<?php foreach ( array( 'bottom-right' => 'پایین راست', 'bottom-left' => 'پایین چپ', 'top-right' => 'بالا راست', 'top-left' => 'بالا چپ' ) as $pos_key => $pos_label ) : ?>
+										<label class="yuniq-ai-choice">
+											<input type="radio" name="yuniq_ai_settings[widget_position]" value="<?php echo esc_attr( $pos_key ); ?>" <?php checked( $s['widget_position'], $pos_key ); ?> />
+											<span class="yuniq-ai-choice-box"><span class="yuniq-ai-corner-demo yuniq-ai-corner-<?php echo esc_attr( $pos_key ); ?>"></span><?php echo esc_html( $pos_label ); ?></span>
+										</label>
+									<?php endforeach; ?>
+								</div>
+							</div>
+							<div class="yq-grid-2">
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-custom-position-x">فاصله از کناره</label>
+									<?php $yq_range( 'custom_position_x', 0, 200, 2, 'px' ); ?>
+								</div>
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-custom-position-y">فاصله از بالا/پایین</label>
+									<?php $yq_range( 'custom_position_y', 0, 200, 2, 'px' ); ?>
+								</div>
+							</div>
+							<p class="yq-help">اگر دکمه روی دکمه دیگری از سایت (مثل واتس‌اپ یا «بازگشت به بالا») افتاده، فاصله را بیشتر کنید.</p>
+							<div class="yq-grid-2">
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-chat-width">عرض پنجره گفتگو</label>
+									<?php $yq_range( 'chat_width', 320, 560, 10, 'px' ); ?>
+								</div>
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-chat-height">ارتفاع پنجره گفتگو</label>
+									<?php $yq_range( 'chat_height', 400, 900, 10, 'px' ); ?>
+								</div>
+							</div>
+							<p class="yq-help">در موبایل پنجره همیشه تمام‌صفحه باز می‌شود.</p>
+						</section>
+
+						<details class="yuniq-ai-card yq-more" id="yq-sec-more">
+							<summary><h2><span class="yq-step">+</span> تنظیمات بیشتر <small>رنگ پیام‌ها، فونت، گردی گوشه‌ها</small></h2></summary>
+							<div class="yq-grid-2">
+								<div class="yq-field">
+									<span class="yq-label">رنگ پیام بازدیدکننده</span>
+									<input type="text" name="yuniq_ai_settings[user_bubble_color]" value="<?php echo esc_attr( $s['user_bubble_color'] ); ?>" class="yuniq-ai-color-picker" />
+									<p class="yq-help">خالی = گرادیان رنگ‌های بالا.</p>
+								</div>
+								<div class="yq-field">
+									<span class="yq-label">رنگ پیام دستیار</span>
+									<input type="text" name="yuniq_ai_settings[bot_bubble_color]" value="<?php echo esc_attr( $s['bot_bubble_color'] ); ?>" class="yuniq-ai-color-picker" />
+									<p class="yq-help">خالی = سفید (در حالت تاریک، خاکستری تیره).</p>
+								</div>
+							</div>
+							<p class="yq-help">رنگ متن داخل پیام‌ها خودکار سفید یا تیره انتخاب می‌شود تا همیشه خوانا باشد.</p>
+							<div class="yq-grid-2">
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-font-family">فونت</label>
+									<select name="yuniq_ai_settings[font_family]" id="yuniq-ai-font-family">
+										<option value="vazirmatn" <?php selected( $s['font_family'], 'vazirmatn' ); ?>>وزیرمتن (همراه افزونه)</option>
+										<option value="inherit" <?php selected( $s['font_family'], 'inherit' ); ?>>همان فونت قالب سایت</option>
+										<option value="custom" <?php selected( $s['font_family'], 'custom' ); ?>>نام فونت دلخواه</option>
+									</select>
+									<input type="text" name="yuniq_ai_settings[custom_font]" id="yuniq-ai-custom-font" value="<?php echo esc_attr( $s['custom_font'] ); ?>" class="regular-text yuniq-ai-when-custom-font" placeholder="IRANSansX" dir="ltr" style="margin-top:6px;" />
+									<p class="yq-help yuniq-ai-when-custom-font">فونت باید در قالب سایت بارگذاری شده باشد؛ اینجا فقط نامش را بنویسید.</p>
+								</div>
+								<div class="yq-field">
+									<label class="yq-label" for="yuniq-ai-font-size">اندازه متن</label>
+									<?php $yq_range( 'font_size', 12, 18, 1, 'px' ); ?>
+									<label class="yq-label" for="yuniq-ai-border-radius" style="margin-top:12px;">گردی گوشه‌های پنجره</label>
+									<?php $yq_range( 'border_radius', 0, 32, 1, 'px' ); ?>
+								</div>
+							</div>
+						</details>
 					</div>
 
 					<aside class="yuniq-ai-preview-col">

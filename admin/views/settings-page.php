@@ -9,8 +9,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$s = $settings;
+$s       = $settings;
 $has_woo = class_exists( 'WooCommerce' );
+
+/**
+ * Print an on/off switch bound to one boolean setting.
+ *
+ * @param string $key Setting name.
+ */
+$yq_switch = function ( $key ) use ( $s ) {
+	?>
+	<label class="yuniq-ai-switch">
+		<input type="checkbox" name="yuniq_ai_settings[<?php echo esc_attr( $key ); ?>]" value="1" <?php checked( ! empty( $s[ $key ] ) ); ?> />
+		<span class="slider"></span>
+	</label>
+	<?php
+};
 ?>
 <div class="wrap yuniq-ai-admin-wrap" dir="rtl">
 	<div class="yuniq-ai-header">
@@ -35,6 +49,7 @@ $has_woo = class_exists( 'WooCommerce' );
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="ai">API هوش مصنوعی</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="crawler">خزنده محتوا</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="appearance">طراحی</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="display">نمایش و پیشرفته</button>
 				<button type="button" class="yuniq-ai-tab-btn" data-tab="live-support">پشتیبانی زنده</button>
 			</nav>
 
@@ -123,56 +138,163 @@ $has_woo = class_exists( 'WooCommerce' );
 
 			<!-- AI API -->
 			<div class="yuniq-ai-tab-panel" id="tab-ai">
+				<div class="yuniq-ai-card yuniq-ai-guide">
+					<h2>راهنمای اتصال در ۳ قدم</h2>
+					<ol class="yuniq-ai-steps">
+						<li>
+							<strong>سرویس را انتخاب کنید.</strong>
+							<span>اگر هاست سایت در ایران است، یکی از درگاه‌های ایرانی (اول‌ای‌آی، گپ‌جی‌پی‌تی، متیس) را انتخاب کنید. OpenAI، Gemini و Claude معمولاً درخواست‌هایی را که از IP ایران ارسال شود رد می‌کنند.</span>
+						</li>
+						<li>
+							<strong>کلید API بگیرید.</strong>
+							<span>در سایت سرویس ثبت‌نام کنید، اعتبار بخرید و از بخش API Keys یک کلید جدید بسازید. لینک مستقیم پایین فیلد «سرویس» نمایش داده می‌شود.</span>
+						</li>
+						<li>
+							<strong>کلید را وارد کنید و «تست اتصال» را بزنید.</strong>
+							<span>اگر پیام سبز دیدید، تنظیمات را ذخیره کنید و بعد از بخش «پایگاه دانش» محتوای سایت را ایندکس کنید تا دستیار سایت شما را بشناسد.</span>
+						</li>
+					</ol>
+				</div>
+
 				<div class="yuniq-ai-card">
-					<h2>تنظیمات API هوش مصنوعی</h2>
+					<h2>اتصال به سرویس هوش مصنوعی</h2>
 					<table class="form-table">
 						<tr>
-							<th scope="row">ارائه‌دهنده</th>
+							<th scope="row"><label for="yuniq-ai-provider">سرویس</label></th>
 							<td>
-								<select name="yuniq_ai_settings[ai_provider]">
-									<option value="openai" <?php selected( isset( $s['ai_provider'] ) ? $s['ai_provider'] : '', 'openai' ); ?>>OpenAI</option>
-									<option value="custom" <?php selected( isset( $s['ai_provider'] ) ? $s['ai_provider'] : '', 'custom' ); ?>>API سفارشی</option>
+								<select name="yuniq_ai_settings[ai_provider]" id="yuniq-ai-provider">
+									<?php foreach ( \Yuniq\Ai\Ai\Presets::all() as $preset_id => $preset ) : ?>
+										<option value="<?php echo esc_attr( $preset_id ); ?>" <?php selected( $s['ai_provider'], $preset_id ); ?>><?php echo esc_html( $preset['label'] ); ?></option>
+									<?php endforeach; ?>
 								</select>
+								<div class="yuniq-ai-provider-info" id="yuniq-ai-provider-info" aria-live="polite"></div>
 							</td>
 						</tr>
 						<tr>
-							<th scope="row">کلید API</th>
+							<th scope="row"><label for="yuniq-ai-api-key">کلید API</label></th>
 							<td>
-								<input type="password" name="yuniq_ai_settings[api_key]" value="<?php echo esc_attr( empty( $s['api_key'] ) ? '' : \Yuniq\Ai\Settings::SECRET_MASK ); ?>" class="regular-text" autocomplete="off" />
-								<p class="description"><?php esc_html_e( 'کلید ذخیره‌شده هرگز در این صفحه نمایش داده نمی‌شود. برای تغییر، کلید جدید را وارد کنید؛ برای حفظ کلید فعلی این فیلد را دست نزنید.', 'yuniq-ai' ); ?></p>
+								<input type="password" name="yuniq_ai_settings[api_key]" id="yuniq-ai-api-key" value="<?php echo esc_attr( empty( $s['api_key'] ) ? '' : \Yuniq\Ai\Settings::SECRET_MASK ); ?>" class="regular-text" autocomplete="off" dir="ltr" />
+								<p class="description">کلید فقط روی سرور شما نگه‌داری می‌شود و هرگز به مرورگر بازدیدکننده ارسال نمی‌شود. کلید ذخیره‌شده در این صفحه نمایش داده نمی‌شود؛ برای تغییر، کلید جدید را وارد کنید و برای حفظ کلید فعلی به این فیلد دست نزنید.</p>
 							</td>
 						</tr>
 						<tr>
-							<th scope="row">آدرس Endpoint</th>
+							<th scope="row"><label for="yuniq-ai-endpoint">آدرس API (Endpoint)</label></th>
 							<td>
-								<input type="url" name="yuniq_ai_settings[api_endpoint]" value="<?php echo esc_attr( isset( $s['api_endpoint'] ) ? $s['api_endpoint'] : 'https://api.openai.com/v1/chat/completions' ); ?>" class="large-text" />
+								<input type="url" name="yuniq_ai_settings[api_endpoint]" id="yuniq-ai-endpoint" value="<?php echo esc_attr( $s['api_endpoint'] ); ?>" class="large-text" dir="ltr" />
+								<p class="description">با انتخاب سرویس خودکار پر می‌شود. آدرس پایه (مثلاً <code>https://example.com/v1</code>) هم کافی است؛ مسیر <code>/chat/completions</code> خودکار اضافه می‌شود.</p>
 							</td>
 						</tr>
 						<tr>
-							<th scope="row">مدل</th>
+							<th scope="row"><label for="yuniq-ai-model">مدل</label></th>
 							<td>
-								<input type="text" name="yuniq_ai_settings[model]" value="<?php echo esc_attr( isset( $s['model'] ) ? $s['model'] : 'gpt-4o-mini' ); ?>" class="regular-text" />
+								<div class="yuniq-ai-inline">
+									<input type="text" name="yuniq_ai_settings[model]" id="yuniq-ai-model" value="<?php echo esc_attr( $s['model'] ); ?>" class="regular-text" dir="ltr" list="yuniq-ai-model-options" />
+									<datalist id="yuniq-ai-model-options"></datalist>
+									<button type="button" class="button" id="yuniq-ai-load-models">دریافت فهرست مدل‌ها</button>
+								</div>
+								<div class="yuniq-ai-model-list" id="yuniq-ai-model-list"></div>
+								<p class="description">برای پشتیبانی سایت، مدل‌های سبک (مثل gpt-4o-mini یا claude-haiku) سریع‌تر و ارزان‌ترند و کیفیت کافی دارند.</p>
 							</td>
 						</tr>
 						<tr>
-							<th scope="row">دما (Temperature)</th>
+							<th scope="row">بررسی اتصال</th>
 							<td>
-								<input type="number" name="yuniq_ai_settings[temperature]" value="<?php echo esc_attr( isset( $s['temperature'] ) ? $s['temperature'] : 0.7 ); ?>" min="0" max="2" step="0.1" />
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">حداکثر توکن</th>
-							<td>
-								<input type="number" name="yuniq_ai_settings[max_tokens]" value="<?php echo esc_attr( isset( $s['max_tokens'] ) ? $s['max_tokens'] : 1024 ); ?>" min="64" max="8192" step="64" />
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">پرامپت سیستم</th>
-							<td>
-								<textarea name="yuniq_ai_settings[system_prompt]" rows="6" class="large-text"><?php echo esc_textarea( isset( $s['system_prompt'] ) ? $s['system_prompt'] : '' ); ?></textarea>
+								<button type="button" class="button button-secondary" id="yuniq-ai-test-connection">تست اتصال</button>
+								<div class="yuniq-ai-test-result" id="yuniq-ai-test-result" aria-live="polite"></div>
+								<p class="description">با مقادیر همین فرم (حتی پیش از ذخیره) یک پیام کوتاه ارسال می‌شود. هزینه آن ناچیز است.</p>
 							</td>
 						</tr>
 					</table>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>رفتار پاسخ‌ها</h2>
+					<table class="form-table">
+						<tr>
+							<th scope="row"><label for="yuniq-ai-temperature">خلاقیت (Temperature)</label></th>
+							<td>
+								<div class="yuniq-ai-range">
+									<input type="range" name="yuniq_ai_settings[temperature]" id="yuniq-ai-temperature" value="<?php echo esc_attr( $s['temperature'] ); ?>" min="0" max="2" step="0.1" />
+									<output for="yuniq-ai-temperature"><?php echo esc_html( $s['temperature'] ); ?></output>
+								</div>
+								<p class="description">عدد کمتر = پاسخ‌های دقیق‌تر و یکسان‌تر (برای پشتیبانی و فروش ۰.۳ تا ۰.۷ مناسب است). عدد بیشتر = پاسخ‌های متنوع‌تر و خلاقانه‌تر.</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="yuniq-ai-max-tokens">حداکثر طول پاسخ (توکن)</label></th>
+							<td>
+								<input type="number" name="yuniq_ai_settings[max_tokens]" id="yuniq-ai-max-tokens" value="<?php echo esc_attr( $s['max_tokens'] ); ?>" min="64" max="8192" step="64" class="small-text" />
+								<p class="description">هر توکن تقریباً نصف یک کلمه فارسی است. ۵۱۲ برای پاسخ‌های کوتاه و ۱۰۲۴ برای پاسخ‌های کامل کافی است.</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="yuniq-ai-history">حافظه گفتگو</label></th>
+							<td>
+								<input type="number" name="yuniq_ai_settings[history_limit]" id="yuniq-ai-history" value="<?php echo esc_attr( $s['history_limit'] ); ?>" min="0" max="20" class="small-text" /> پیام آخر
+								<p class="description">چند پیام قبلی همراه هر سوال ارسال شود تا دستیار موضوع گفتگو را به خاطر بسپارد. عدد بیشتر = هزینه بیشتر.</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="yuniq-ai-context">منابع از پایگاه دانش</label></th>
+							<td>
+								<input type="number" name="yuniq_ai_settings[context_documents]" id="yuniq-ai-context" value="<?php echo esc_attr( $s['context_documents'] ); ?>" min="1" max="12" class="small-text" /> صفحه
+								<p class="description">چند صفحه مرتبط از سایت برای پاسخ به هر سوال به مدل داده شود. عدد بیشتر = پاسخ دقیق‌تر ولی کندتر و گران‌تر.</p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="yuniq-ai-timeout">حداکثر زمان انتظار</label></th>
+							<td>
+								<input type="number" name="yuniq_ai_settings[request_timeout]" id="yuniq-ai-timeout" value="<?php echo esc_attr( $s['request_timeout'] ); ?>" min="10" max="300" class="small-text" /> ثانیه
+							</td>
+						</tr>
+					</table>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>شخصیت و دستورالعمل دستیار</h2>
+					<p class="description">این متن به دستیار می‌گوید چه کسی است، با چه لحنی صحبت کند و چه کارهایی انجام ندهد. می‌توانید از یکی از قالب‌های آماده شروع کنید و آن را ویرایش کنید.</p>
+					<div class="yuniq-ai-template-row">
+						<button type="button" class="button yuniq-ai-prompt-template" data-template="shop">فروشگاه اینترنتی</button>
+						<button type="button" class="button yuniq-ai-prompt-template" data-template="services">شرکت خدماتی</button>
+						<button type="button" class="button yuniq-ai-prompt-template" data-template="education">آموزشی / دوره</button>
+						<button type="button" class="button yuniq-ai-prompt-template" data-template="clinic">مطب / کلینیک</button>
+					</div>
+					<textarea name="yuniq_ai_settings[system_prompt]" id="yuniq-ai-system-prompt" rows="8" class="large-text"><?php echo esc_textarea( $s['system_prompt'] ); ?></textarea>
+					<p class="description">قوانین فنی (استفاده از پایگاه دانش، ارجاع به کارشناس، کارت محصول و فرم) همیشه خودکار اضافه می‌شوند و لازم نیست اینجا بنویسید.</p>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>رفع مشکل</h2>
+					<div class="yuniq-ai-faq">
+						<details>
+							<summary>خطای ۴۰۱ یا ۴۰۳ (دسترسی رد شد)</summary>
+							<p>کلید اشتباه، منقضی یا مربوط به سرویس دیگری است. مطمئن شوید کلید را از همان سرویسی گرفته‌اید که در فیلد «سرویس» انتخاب کرده‌اید، و حساب شما اعتبار کافی دارد.</p>
+						</details>
+						<details>
+							<summary>خطای ۴۰۴ (آدرس یافت نشد)</summary>
+							<p>آدرس API یا نام مدل اشتباه است. سرویس را دوباره انتخاب کنید تا آدرس درست پر شود، و با دکمه «دریافت فهرست مدل‌ها» نام دقیق مدل را انتخاب کنید.</p>
+						</details>
+						<details>
+							<summary>خطای ۴۲۹ (سقف درخواست)</summary>
+							<p>اعتبار حساب تمام شده یا در یک دقیقه درخواست زیادی ارسال شده است. حساب کاربری خود را در سایت سرویس بررسی کنید.</p>
+						</details>
+						<details>
+							<summary>خطای اتصال، timeout یا «cURL error»</summary>
+							<p>سرور سایت نمی‌تواند به سرویس وصل شود. اگر هاست در ایران است، معمولاً دلیلش تحریم است: یک درگاه ایرانی انتخاب کنید. اگر هاست خارج از ایران است، از پشتیبانی هاست بپرسید که اتصال خروجی (outbound) مسدود نباشد.</p>
+						</details>
+						<details>
+							<summary>پاسخ‌ها یکجا ظاهر می‌شوند، نه کلمه به کلمه</summary>
+							<p>برای نمایش تدریجی پاسخ، افزونه PHP به نام cURL روی هاست لازم است. همچنین برخی کش‌ها و فایروال‌ها (مثل Cloudflare) پاسخ تدریجی را بافر می‌کنند. بدون آن هم دستیار کار می‌کند.</p>
+						</details>
+						<details>
+							<summary>دستیار اطلاعات سایت را نمی‌داند</summary>
+							<p>به «پایگاه دانش» بروید و ایندکس را اجرا کنید. بعد از افزودن محصول یا صفحه جدید هم ایندکس را دوباره اجرا کنید.</p>
+						</details>
+						<details>
+							<summary>برای توسعه‌دهندگان</summary>
+							<p>هر سرویسی که از قالب <code>chat/completions</code> پشتیبانی کند با گزینه «سفارشی» کار می‌کند. برای سرویس‌های دیگر فیلتر <code>yuniq_ai_provider</code> را برای برگرداندن کلاس سفارشی، <code>yuniq_ai_api_request_args</code> را برای افزودن هدر، <code>yuniq_ai_system_prompt</code> را برای تغییر پرامپت نهایی و <code>yuniq_ai_provider_presets</code> را برای افزودن سرویس به همین فهرست استفاده کنید.</p>
+						</details>
+					</div>
 				</div>
 			</div>
 
@@ -252,99 +374,362 @@ $has_woo = class_exists( 'WooCommerce' );
 
 			<!-- طراحی -->
 			<div class="yuniq-ai-tab-panel" id="tab-appearance">
+				<div class="yuniq-ai-design-layout">
+					<div class="yuniq-ai-design-fields">
+
+						<div class="yuniq-ai-card">
+							<h2>دکمه شناور</h2>
+							<table class="form-table">
+								<tr>
+									<th scope="row">تصویر دکمه</th>
+									<td>
+										<div class="yuniq-ai-choices">
+											<?php
+											$icon_labels = array(
+												'bot'     => 'ربات',
+												'chat'    => 'حباب گفتگو',
+												'sparkle' => 'جرقه AI',
+												'headset' => 'پشتیبان',
+												'avatar'  => 'تصویر دلخواه',
+											);
+											foreach ( $icon_labels as $icon_key => $icon_label ) :
+												?>
+												<label class="yuniq-ai-choice yuniq-ai-choice-icon">
+													<input type="radio" name="yuniq_ai_settings[launcher_icon]" value="<?php echo esc_attr( $icon_key ); ?>" <?php checked( $s['launcher_icon'], $icon_key ); ?> />
+													<span class="yuniq-ai-choice-box">
+														<span class="yuniq-ai-choice-visual">
+															<?php
+															if ( 'avatar' === $icon_key ) {
+																echo '<span class="dashicons dashicons-format-image" aria-hidden="true"></span>';
+															} else {
+																echo \Yuniq\Ai\Frontend\Widget::icon_markup( $icon_key ); // phpcs:ignore WordPress.Security.EscapeOutput -- static SVG.
+															}
+															?>
+														</span>
+														<?php echo esc_html( $icon_label ); ?>
+													</span>
+												</label>
+											<?php endforeach; ?>
+										</div>
+									</td>
+								</tr>
+								<tr class="yuniq-ai-when-avatar">
+									<th scope="row"><label for="yuniq-ai-avatar-url">تصویر دلخواه</label></th>
+									<td>
+										<input type="url" name="yuniq_ai_settings[avatar_url]" id="yuniq-ai-avatar-url" value="<?php echo esc_attr( $s['avatar_url'] ); ?>" class="regular-text" dir="ltr" />
+										<button type="button" class="button" id="yuniq-ai-upload-avatar">انتخاب از رسانه</button>
+										<p class="description">تصویر مربعی (مثلاً ۲۰۰×۲۰۰) با پس‌زمینه شفاف یا عکس کاراکتر برند شما. اگر لوگوی هدر خالی باشد، همین تصویر در هدر پنل هم استفاده می‌شود.</p>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row">شکل دکمه</th>
+									<td>
+										<div class="yuniq-ai-choices">
+											<?php foreach ( array( 'squircle' => 'مربع گرد', 'circle' => 'دایره', 'pill' => 'کپسولی با متن' ) as $shape_key => $shape_label ) : ?>
+												<label class="yuniq-ai-choice">
+													<input type="radio" name="yuniq_ai_settings[launcher_shape]" value="<?php echo esc_attr( $shape_key ); ?>" <?php checked( $s['launcher_shape'], $shape_key ); ?> />
+													<span class="yuniq-ai-choice-box"><span class="yuniq-ai-shape-demo yuniq-ai-shape-demo-<?php echo esc_attr( $shape_key ); ?>"></span><?php echo esc_html( $shape_label ); ?></span>
+												</label>
+											<?php endforeach; ?>
+										</div>
+									</td>
+								</tr>
+								<tr class="yuniq-ai-when-pill">
+									<th scope="row"><label for="yuniq-ai-launcher-label">متن روی دکمه</label></th>
+									<td><input type="text" name="yuniq_ai_settings[launcher_label]" id="yuniq-ai-launcher-label" value="<?php echo esc_attr( $s['launcher_label'] ); ?>" class="regular-text" /></td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-launcher-size">اندازه دکمه</label></th>
+									<td>
+										<div class="yuniq-ai-range">
+											<input type="range" name="yuniq_ai_settings[launcher_size]" id="yuniq-ai-launcher-size" value="<?php echo esc_attr( $s['launcher_size'] ); ?>" min="44" max="88" step="2" />
+											<output for="yuniq-ai-launcher-size"><?php echo esc_html( $s['launcher_size'] ); ?></output> px
+										</div>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-launcher-bg">رنگ دکمه</label></th>
+									<td>
+										<select name="yuniq_ai_settings[launcher_bg]" id="yuniq-ai-launcher-bg">
+											<option value="gradient" <?php selected( $s['launcher_bg'], 'gradient' ); ?>>گرادیان (رنگ اصلی ← ثانویه)</option>
+											<option value="solid" <?php selected( $s['launcher_bg'], 'solid' ); ?>>تک‌رنگ (رنگ اصلی)</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row">نشان «آنلاین»</th>
+									<td><?php $yq_switch( 'show_online_badge' ); ?> <span class="description">نقطه سبز گوشه دکمه</span></td>
+								</tr>
+								<tr>
+									<th scope="row">انیمیشن‌ها</th>
+									<td><?php $yq_switch( 'enable_animations' ); ?> <span class="description">حرکت ربات، باز و بسته شدن نرم پنل</span></td>
+								</tr>
+							</table>
+						</div>
+
+						<div class="yuniq-ai-card">
+							<h2>حباب خوش‌آمد کنار دکمه</h2>
+							<table class="form-table">
+								<tr>
+									<th scope="row">نمایش حباب</th>
+									<td><?php $yq_switch( 'greeting_enabled' ); ?></td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-greeting-title">عنوان</label></th>
+									<td><input type="text" name="yuniq_ai_settings[greeting_title]" id="yuniq-ai-greeting-title" value="<?php echo esc_attr( $s['greeting_title'] ); ?>" class="regular-text" /></td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-greeting-text">متن</label></th>
+									<td><input type="text" name="yuniq_ai_settings[greeting_text]" id="yuniq-ai-greeting-text" value="<?php echo esc_attr( $s['greeting_text'] ); ?>" class="regular-text" /></td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-greeting-delay">نمایش خودکار پس از</label></th>
+									<td>
+										<input type="number" name="yuniq_ai_settings[greeting_delay]" id="yuniq-ai-greeting-delay" value="<?php echo esc_attr( $s['greeting_delay'] ); ?>" min="0" max="60" class="small-text" /> ثانیه
+										<p class="description">حباب چند ثانیه بعد از باز شدن صفحه خودش ظاهر و بعد محو می‌شود. ۰ = فقط وقتی ماوس روی دکمه برود.</p>
+									</td>
+								</tr>
+							</table>
+						</div>
+
+						<div class="yuniq-ai-card">
+							<h2>رنگ‌ها و فونت</h2>
+							<table class="form-table">
+								<tr>
+									<th scope="row">رنگ اصلی</th>
+									<td><input type="text" name="yuniq_ai_settings[primary_color]" value="<?php echo esc_attr( $s['primary_color'] ); ?>" class="yuniq-ai-color-picker" data-default-color="#263DFF" /></td>
+								</tr>
+								<tr>
+									<th scope="row">رنگ ثانویه</th>
+									<td><input type="text" name="yuniq_ai_settings[secondary_color]" value="<?php echo esc_attr( $s['secondary_color'] ); ?>" class="yuniq-ai-color-picker" data-default-color="#111B55" /></td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-header-style">هدر پنل</label></th>
+									<td>
+										<select name="yuniq_ai_settings[header_style]" id="yuniq-ai-header-style">
+											<option value="gradient" <?php selected( $s['header_style'], 'gradient' ); ?>>گرادیان (رنگ اصلی ← ثانویه)</option>
+											<option value="brand" <?php selected( $s['header_style'], 'brand' ); ?>>تک‌رنگ (رنگ اصلی)</option>
+											<option value="solid" <?php selected( $s['header_style'], 'solid' ); ?>>ساده (سفید / تیره، مینیمال)</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row">رنگ پیام بازدیدکننده</th>
+									<td>
+										<input type="text" name="yuniq_ai_settings[user_bubble_color]" value="<?php echo esc_attr( $s['user_bubble_color'] ); ?>" class="yuniq-ai-color-picker" />
+										<p class="description">خالی = گرادیان رنگ‌های برند. رنگ متن خودکار (سفید یا تیره) انتخاب می‌شود تا خوانا بماند.</p>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row">رنگ پیام دستیار</th>
+									<td>
+										<input type="text" name="yuniq_ai_settings[bot_bubble_color]" value="<?php echo esc_attr( $s['bot_bubble_color'] ); ?>" class="yuniq-ai-color-picker" />
+										<p class="description">خالی = سفید در حالت روشن و خاکستری تیره در حالت تاریک.</p>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-theme">حالت رنگی</label></th>
+									<td>
+										<select name="yuniq_ai_settings[theme]" id="yuniq-ai-theme">
+											<option value="auto" <?php selected( $s['theme'], 'auto' ); ?>>خودکار (بر اساس تنظیم دستگاه کاربر)</option>
+											<option value="light" <?php selected( $s['theme'], 'light' ); ?>>همیشه روشن</option>
+											<option value="dark" <?php selected( $s['theme'], 'dark' ); ?>>همیشه تاریک</option>
+										</select>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-font-family">فونت</label></th>
+									<td>
+										<select name="yuniq_ai_settings[font_family]" id="yuniq-ai-font-family">
+											<option value="vazirmatn" <?php selected( $s['font_family'], 'vazirmatn' ); ?>>وزیرمتن (همراه افزونه)</option>
+											<option value="inherit" <?php selected( $s['font_family'], 'inherit' ); ?>>فونت قالب سایت</option>
+											<option value="custom" <?php selected( $s['font_family'], 'custom' ); ?>>نام فونت دلخواه</option>
+										</select>
+										<input type="text" name="yuniq_ai_settings[custom_font]" id="yuniq-ai-custom-font" value="<?php echo esc_attr( $s['custom_font'] ); ?>" class="regular-text yuniq-ai-when-custom-font" placeholder="IRANSansX, Yekan Bakh" dir="ltr" />
+										<p class="description yuniq-ai-when-custom-font">فونت باید از قبل در قالب سایت بارگذاری شده باشد؛ اینجا فقط نامش را بنویسید.</p>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-font-size">اندازه متن</label></th>
+									<td>
+										<div class="yuniq-ai-range">
+											<input type="range" name="yuniq_ai_settings[font_size]" id="yuniq-ai-font-size" value="<?php echo esc_attr( $s['font_size'] ); ?>" min="12" max="18" step="1" />
+											<output for="yuniq-ai-font-size"><?php echo esc_html( $s['font_size'] ); ?></output> px
+										</div>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row"><label for="yuniq-ai-radius">گردی گوشه‌های پنل</label></th>
+									<td>
+										<div class="yuniq-ai-range">
+											<input type="range" name="yuniq_ai_settings[border_radius]" id="yuniq-ai-radius" value="<?php echo esc_attr( $s['border_radius'] ); ?>" min="0" max="32" step="1" />
+											<output for="yuniq-ai-radius"><?php echo esc_html( $s['border_radius'] ); ?></output> px
+										</div>
+									</td>
+								</tr>
+							</table>
+						</div>
+
+						<div class="yuniq-ai-card">
+							<h2>جایگاه و اندازه</h2>
+							<table class="form-table">
+								<tr>
+									<th scope="row">گوشه صفحه</th>
+									<td>
+										<div class="yuniq-ai-choices yuniq-ai-corner-choices">
+											<?php foreach ( array( 'top-left' => 'بالا چپ', 'top-right' => 'بالا راست', 'bottom-left' => 'پایین چپ', 'bottom-right' => 'پایین راست' ) as $pos_key => $pos_label ) : ?>
+												<label class="yuniq-ai-choice">
+													<input type="radio" name="yuniq_ai_settings[widget_position]" value="<?php echo esc_attr( $pos_key ); ?>" <?php checked( $s['widget_position'], $pos_key ); ?> />
+													<span class="yuniq-ai-choice-box"><span class="yuniq-ai-corner-demo yuniq-ai-corner-<?php echo esc_attr( $pos_key ); ?>"></span><?php echo esc_html( $pos_label ); ?></span>
+												</label>
+											<?php endforeach; ?>
+										</div>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row">فاصله از لبه‌ها</th>
+									<td>
+										<label>افقی <input type="number" name="yuniq_ai_settings[custom_position_x]" value="<?php echo esc_attr( $s['custom_position_x'] ); ?>" min="0" max="400" class="small-text" /> px</label>
+										<label style="margin-right:12px;">عمودی <input type="number" name="yuniq_ai_settings[custom_position_y]" value="<?php echo esc_attr( $s['custom_position_y'] ); ?>" min="0" max="400" class="small-text" /> px</label>
+										<p class="description">اگر دکمه روی دکمه‌های دیگر سایت (مثل «بازگشت به بالا» یا واتس‌اپ) افتاده، این عدد را بیشتر کنید. در موبایل حداکثر ۱۶ پیکسل در نظر گرفته می‌شود.</p>
+									</td>
+								</tr>
+								<tr>
+									<th scope="row">اندازه پنجره گفتگو</th>
+									<td>
+										<label>عرض <input type="number" name="yuniq_ai_settings[chat_width]" value="<?php echo esc_attr( $s['chat_width'] ); ?>" min="320" max="560" class="small-text" /> px</label>
+										<label style="margin-right:12px;">ارتفاع <input type="number" name="yuniq_ai_settings[chat_height]" value="<?php echo esc_attr( $s['chat_height'] ); ?>" min="400" max="900" class="small-text" /> px</label>
+										<p class="description">در موبایل پنجره همیشه تمام‌صفحه باز می‌شود.</p>
+									</td>
+								</tr>
+							</table>
+						</div>
+					</div>
+
+					<aside class="yuniq-ai-preview-col">
+						<div class="yuniq-ai-preview-sticky">
+							<div class="yuniq-ai-preview-head">
+								<strong>پیش‌نمایش زنده</strong>
+								<span class="description">با هر تغییر به‌روز می‌شود</span>
+							</div>
+							<div class="yuniq-ai-preview" id="yuniq-ai-preview" data-pos="bottom-right" data-theme="light">
+								<div class="yq-pv-panel">
+									<div class="yq-pv-header">
+										<span class="yq-pv-logo"></span>
+										<span class="yq-pv-titles">
+											<strong class="yq-pv-name"><?php echo esc_html( $s['assistant_name'] ); ?></strong>
+											<small><?php echo esc_html( $s['header_subtitle'] ); ?></small>
+										</span>
+									</div>
+									<div class="yq-pv-body">
+										<div class="yq-pv-msg yq-pv-bot">سلام! چطور می‌تونم کمکتون کنم؟</div>
+										<div class="yq-pv-msg yq-pv-user">قیمت‌ها رو می‌خواستم</div>
+										<div class="yq-pv-msg yq-pv-bot">حتماً! کدوم محصول مدنظرتونه؟</div>
+									</div>
+									<div class="yq-pv-input"><span class="yq-pv-placeholder"></span><span class="yq-pv-send"></span></div>
+								</div>
+								<div class="yq-pv-launcher-row">
+									<span class="yq-pv-greeting"><strong></strong><span></span></span>
+									<span class="yq-pv-launcher">
+										<span class="yq-pv-badge"></span>
+										<?php foreach ( array( 'bot', 'chat', 'sparkle', 'headset' ) as $pv_icon ) : ?>
+											<span class="yq-pv-icon" data-icon="<?php echo esc_attr( $pv_icon ); ?>"><?php echo \Yuniq\Ai\Frontend\Widget::icon_markup( $pv_icon ); // phpcs:ignore WordPress.Security.EscapeOutput -- static SVG. ?></span>
+										<?php endforeach; ?>
+										<img class="yq-pv-icon yq-pv-avatar" data-icon="avatar" alt="" />
+										<span class="yq-pv-label"></span>
+									</span>
+								</div>
+							</div>
+							<div class="yuniq-ai-preview-theme">
+								<button type="button" class="button button-small is-active" data-pv-theme="light">روشن</button>
+								<button type="button" class="button button-small" data-pv-theme="dark">تاریک</button>
+							</div>
+						</div>
+					</aside>
+				</div>
+			</div>
+
+			<!-- نمایش -->
+			<div class="yuniq-ai-tab-panel" id="tab-display">
 				<div class="yuniq-ai-card">
-					<h2>تنظیمات طراحی</h2>
+					<h2>کجا نمایش داده شود؟</h2>
 					<table class="form-table">
 						<tr>
-							<th scope="row">لوگو / آواتار</th>
+							<th scope="row">صفحات</th>
 							<td>
-								<input type="url" name="yuniq_ai_settings[avatar_url]" id="yuniq-ai-avatar-url" value="<?php echo esc_attr( isset( $s['avatar_url'] ) ? $s['avatar_url'] : '' ); ?>" class="regular-text" />
-								<button type="button" class="button" id="yuniq-ai-upload-avatar">آپلود</button>
+								<fieldset class="yuniq-ai-radio-list">
+									<label><input type="radio" name="yuniq_ai_settings[display_rule]" value="all" <?php checked( $s['display_rule'], 'all' ); ?> /> همه صفحات سایت</label>
+									<label><input type="radio" name="yuniq_ai_settings[display_rule]" value="include" <?php checked( $s['display_rule'], 'include' ); ?> /> فقط در صفحات زیر</label>
+									<label><input type="radio" name="yuniq_ai_settings[display_rule]" value="exclude" <?php checked( $s['display_rule'], 'exclude' ); ?> /> همه صفحات به‌جز صفحات زیر</label>
+								</fieldset>
+							</td>
+						</tr>
+						<tr class="yuniq-ai-when-paths">
+							<th scope="row"><label for="yuniq-ai-display-paths">فهرست آدرس‌ها</label></th>
+							<td>
+								<textarea name="yuniq_ai_settings[display_paths]" id="yuniq-ai-display-paths" rows="5" class="large-text code" dir="ltr" placeholder="/&#10;/shop/&#10;/blog/*&#10;/contact-us/"><?php echo esc_textarea( $s['display_paths'] ); ?></textarea>
+								<p class="description">هر خط یک آدرس. <code>/</code> = فقط صفحه اصلی · <code>/shop/</code> = هر آدرسی که این بخش را دارد · <code>/blog/*</code> = هر آدرسی که با این شروع شود.</p>
 							</td>
 						</tr>
 						<tr>
-							<th scope="row">رنگ اصلی</th>
-							<td><input type="text" name="yuniq_ai_settings[primary_color]" value="<?php echo esc_attr( isset( $s['primary_color'] ) ? $s['primary_color'] : '#263DFF' ); ?>" class="yuniq-ai-color-picker" /></td>
+							<th scope="row">پنهان در موبایل</th>
+							<td><?php $yq_switch( 'hide_on_mobile' ); ?></td>
 						</tr>
 						<tr>
-							<th scope="row">رنگ ثانویه</th>
-							<td><input type="text" name="yuniq_ai_settings[secondary_color]" value="<?php echo esc_attr( isset( $s['secondary_color'] ) ? $s['secondary_color'] : '#111B55' ); ?>" class="yuniq-ai-color-picker" /></td>
+							<th scope="row">پنهان در دسکتاپ</th>
+							<td><?php $yq_switch( 'hide_on_desktop' ); ?></td>
 						</tr>
 						<tr>
-							<th scope="row">سبک هدر پنل</th>
+							<th scope="row">صفحه اختصاصی دستیار</th>
 							<td>
-								<?php $header_style = isset( $s['header_style'] ) ? $s['header_style'] : 'gradient'; ?>
-								<select name="yuniq_ai_settings[header_style]">
-									<option value="gradient" <?php selected( $header_style, 'gradient' ); ?>>گرادیان (رنگ اصلی → رنگ ثانویه)</option>
-									<option value="solid" <?php selected( $header_style, 'solid' ); ?>>ساده (تخت و مینیمال)</option>
-								</select>
-								<p class="description">گرادیان از دو رنگی که بالا انتخاب کردید ساخته می‌شود، پس با تغییر رنگ‌ها ظاهر هدر هم عوض می‌شود.</p>
+								<?php $yq_switch( 'full_page_enabled' ); ?>
+								<p class="description">کد کوتاه <code>[yuniq_ai_page]</code> را در هر برگه‌ای قرار دهید تا دستیار به‌صورت تمام‌صفحه (بدون دکمه شناور) در آن نمایش داده شود. این صفحه تابع قوانین بالا نیست.</p>
 							</td>
 						</tr>
+						<?php if ( $has_woo ) : ?>
 						<tr>
-							<th scope="row">حالت رنگی</th>
+							<th scope="row">کارت محصول در گفتگو</th>
 							<td>
-								<?php $hy_theme = isset( $s['theme'] ) ? $s['theme'] : 'auto'; ?>
-								<select name="yuniq_ai_settings[theme]">
-									<option value="auto" <?php selected( $hy_theme, 'auto' ); ?>>خودکار (بر اساس تنظیم مرورگر کاربر)</option>
-									<option value="light" <?php selected( $hy_theme, 'light' ); ?>>همیشه روشن</option>
-									<option value="dark" <?php selected( $hy_theme, 'dark' ); ?>>همیشه تاریک</option>
-								</select>
-								<p class="description">کاربر می‌تواند با دکمه‌ی داخل پنل، حالت را برای خودش تغییر دهد؛ انتخاب او ذخیره می‌شود.</p>
+								<?php $yq_switch( 'product_cards_enabled' ); ?>
+								<p class="description">وقتی دستیار محصولی را پیشنهاد می‌دهد، تصویر، قیمت، موجودی و دکمه خرید آن را نمایش می‌دهد.</p>
 							</td>
 						</tr>
+						<?php endif; ?>
+					</table>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>متن‌ها و اجزای پنجره</h2>
+					<table class="form-table">
 						<tr>
-							<th scope="row">آیکون دکمه شناور</th>
-							<td>
-								<select name="yuniq_ai_settings[button_icon]">
-									<option value="chat" <?php selected( isset( $s['button_icon'] ) ? $s['button_icon'] : '', 'chat' ); ?>>حباب گفتگو</option>
-									<option value="sparkle" <?php selected( isset( $s['button_icon'] ) ? $s['button_icon'] : '', 'sparkle' ); ?>>جرقه AI</option>
-									<option value="bot" <?php selected( isset( $s['button_icon'] ) ? $s['button_icon'] : '', 'bot' ); ?>>ربات</option>
-								</select>
-							</td>
+							<th scope="row"><label for="yuniq-ai-placeholder">متن راهنمای کادر پیام</label></th>
+							<td><input type="text" name="yuniq_ai_settings[input_placeholder]" id="yuniq-ai-placeholder" value="<?php echo esc_attr( $s['input_placeholder'] ); ?>" class="regular-text" /></td>
 						</tr>
 						<tr>
-							<th scope="row">موقعیت ویجت</th>
-							<td>
-								<select name="yuniq_ai_settings[widget_position]" id="yuniq-ai-widget-position">
-									<option value="bottom-right" <?php selected( isset( $s['widget_position'] ) ? $s['widget_position'] : '', 'bottom-right' ); ?>>پایین راست</option>
-									<option value="bottom-left" <?php selected( isset( $s['widget_position'] ) ? $s['widget_position'] : '', 'bottom-left' ); ?>>پایین چپ</option>
-									<option value="top-right" <?php selected( isset( $s['widget_position'] ) ? $s['widget_position'] : '', 'top-right' ); ?>>بالا راست</option>
-									<option value="top-left" <?php selected( isset( $s['widget_position'] ) ? $s['widget_position'] : '', 'top-left' ); ?>>بالا چپ</option>
-									<option value="custom" <?php selected( isset( $s['widget_position'] ) ? $s['widget_position'] : '', 'custom' ); ?>>سفارشی</option>
-								</select>
-							</td>
-						</tr>
-						<tr class="yuniq-ai-custom-pos" style="<?php echo ( isset( $s['widget_position'] ) && 'custom' === $s['widget_position'] ) ? '' : 'display:none;'; ?>">
-							<th scope="row">موقعیت سفارشی</th>
-							<td>
-								<label>X: <input type="number" name="yuniq_ai_settings[custom_position_x]" value="<?php echo esc_attr( isset( $s['custom_position_x'] ) ? $s['custom_position_x'] : 20 ); ?>" min="0" style="width:80px;" /></label>
-								<label style="margin-right:12px;">Y: <input type="number" name="yuniq_ai_settings[custom_position_y]" value="<?php echo esc_attr( isset( $s['custom_position_y'] ) ? $s['custom_position_y'] : 20 ); ?>" min="0" style="width:80px;" /></label>
-							</td>
+							<th scope="row">دکمه روشن / تاریک</th>
+							<td><?php $yq_switch( 'show_theme_toggle' ); ?> <span class="description">اجازه تغییر حالت رنگی به بازدیدکننده</span></td>
 						</tr>
 						<tr>
-							<th scope="row">اندازه پنجره</th>
+							<th scope="row">متن پایین پنجره</th>
 							<td>
-								<label>عرض: <input type="number" name="yuniq_ai_settings[chat_width]" value="<?php echo esc_attr( isset( $s['chat_width'] ) ? $s['chat_width'] : 400 ); ?>" min="320" max="560" style="width:80px;" /> px</label>
-								<label style="margin-right:12px;">ارتفاع: <input type="number" name="yuniq_ai_settings[chat_height]" value="<?php echo esc_attr( isset( $s['chat_height'] ) ? $s['chat_height'] : 860 ); ?>" min="400" max="900" style="width:80px;" /> px</label>
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">شعاع گوشه‌ها</th>
-							<td>
-								<input type="number" name="yuniq_ai_settings[border_radius]" value="<?php echo esc_attr( isset( $s['border_radius'] ) ? $s['border_radius'] : 16 ); ?>" min="0" max="32" style="width:80px;" /> px
-							</td>
-						</tr>
-						<tr>
-							<th scope="row">انیمیشن</th>
-							<td>
-								<label class="yuniq-ai-switch">
-									<input type="checkbox" name="yuniq_ai_settings[enable_animations]" value="1" <?php checked( ! empty( $s['enable_animations'] ) ); ?> />
-									<span class="slider"></span>
-								</label>
+								<?php $yq_switch( 'show_powered_by' ); ?>
+								<input type="text" name="yuniq_ai_settings[powered_by_text]" value="<?php echo esc_attr( $s['powered_by_text'] ); ?>" class="regular-text" style="margin-top:8px;display:block;" />
 							</td>
 						</tr>
 					</table>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>CSS سفارشی</h2>
+					<?php if ( current_user_can( 'unfiltered_html' ) ) : ?>
+						<p class="description">برای تغییرات فراتر از گزینه‌های بالا. همه اجزا زیر <code>#yuniq-ai-root</code> هستند؛ برای مثال:</p>
+						<pre class="yuniq-ai-code" dir="ltr">#yuniq-ai-root .yuniq-ai-launcher { box-shadow: none; }
+#yuniq-ai-root .yuniq-ai-msg-assistant { border-radius: 4px; }
+#yuniq-ai-root { --yuniq-ai-online: #f59e0b; }</pre>
+						<textarea name="yuniq_ai_settings[custom_css]" rows="10" class="large-text code" dir="ltr" spellcheck="false"><?php echo esc_textarea( $s['custom_css'] ); ?></textarea>
+					<?php else : ?>
+						<p class="description">فقط کاربرانی که مجوز «unfiltered_html» دارند (مدیر کل شبکه در وردپرس چندسایته) می‌توانند CSS سفارشی ویرایش کنند.</p>
+					<?php endif; ?>
 				</div>
 			</div>
 

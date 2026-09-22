@@ -97,7 +97,7 @@ final class Widget implements HookableInterface {
 	 * @return void
 	 */
 	public function preload_font() {
-		if ( ! $this->is_active() ) {
+		if ( ! $this->is_active() || ! $this->is_shown_here() || 'vazirmatn' !== $this->settings->get( 'font_family', 'vazirmatn' ) ) {
 			return;
 		}
 
@@ -108,12 +108,62 @@ final class Widget implements HookableInterface {
 	}
 
 	/**
+	 * Whether the floating widget belongs on the current URL, according to
+	 * the page rules on the settings screen.
+	 *
+	 * Each line is a path fragment (`/shop/`), an exact home match (`/`),
+	 * or a pattern with `*` wildcards (`/blog/*`).
+	 *
+	 * @return bool
+	 */
+	private function is_shown_here() {
+		$rule = (string) $this->settings->get( 'display_rule', 'all' );
+
+		if ( 'include' !== $rule && 'exclude' !== $rule ) {
+			return true;
+		}
+
+		$request = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/';
+		$path    = (string) wp_parse_url( $request, PHP_URL_PATH );
+		$path    = '' === $path ? '/' : $path;
+		$lines   = array_filter( array_map( 'trim', explode( "\n", (string) $this->settings->get( 'display_paths', '' ) ) ) );
+		$matched = false;
+
+		foreach ( $lines as $line ) {
+			if ( false !== strpos( $line, '*' ) ) {
+				$regex   = '#^' . str_replace( '\*', '.*', preg_quote( $line, '#' ) ) . '$#i';
+				$matched = (bool) preg_match( $regex, $path );
+			} elseif ( '/' === $line ) {
+				$matched = '/' === $path;
+			} else {
+				$matched = false !== stripos( $path, $line );
+			}
+
+			if ( $matched ) {
+				break;
+			}
+		}
+
+		$shown = 'include' === $rule ? $matched : ! $matched;
+
+		/**
+		 * Filters whether the floating widget shows on the current URL.
+		 *
+		 * @param bool   $shown Result of the page rules.
+		 * @param string $path  Current request path.
+		 */
+		return (bool) apply_filters( 'yuniq_ai_is_shown_here', $shown, $path );
+	}
+
+	/**
 	 * Enqueue the widget stylesheet and script.
 	 *
+	 * @param bool|string $force True to skip the page rules (the shortcode
+	 *                           page); WordPress passes '' from the hook.
 	 * @return void
 	 */
-	public function enqueue_assets() {
-		if ( ! $this->is_active() ) {
+	public function enqueue_assets( $force = false ) {
+		if ( ! $this->is_active() || ( true !== $force && ! $this->is_shown_here() ) ) {
 			return;
 		}
 
@@ -123,6 +173,11 @@ final class Widget implements HookableInterface {
 			array(),
 			YUNIQ_AI_VERSION
 		);
+
+		$custom_css = trim( (string) $this->settings->get( 'custom_css', '' ) );
+		if ( '' !== $custom_css ) {
+			wp_add_inline_style( self::HANDLE, $custom_css );
+		}
 
 		wp_enqueue_script(
 			self::HANDLE,
@@ -254,12 +309,132 @@ final class Widget implements HookableInterface {
 	 * @return string
 	 */
 	private function brand_style() {
-		return sprintf(
-			'--yuniq-ai-primary:%1$s;--yuniq-ai-secondary:%2$s;--yuniq-ai-radius:%3$dpx;',
-			(string) $this->settings->get( 'primary_color', '#263DFF' ),
-			(string) $this->settings->get( 'secondary_color', '#111B55' ),
-			absint( $this->settings->get( 'border_radius', 20 ) )
+		$s    = $this->settings;
+		$vars = array(
+			'--yuniq-ai-primary'       => (string) $s->get( 'primary_color', '#263DFF' ),
+			'--yuniq-ai-secondary'     => (string) $s->get( 'secondary_color', '#111B55' ),
+			'--yuniq-ai-radius'        => absint( $s->get( 'border_radius', 20 ) ) . 'px',
+			'--yuniq-ai-panel-w'       => absint( $s->get( 'chat_width', 420 ) ) . 'px',
+			'--yuniq-ai-panel-h'       => absint( $s->get( 'chat_height', 720 ) ) . 'px',
+			'--yuniq-ai-off-x'         => absint( $s->get( 'custom_position_x', 24 ) ) . 'px',
+			'--yuniq-ai-off-y'         => absint( $s->get( 'custom_position_y', 24 ) ) . 'px',
+			'--yuniq-ai-launcher-size' => absint( $s->get( 'launcher_size', 62 ) ) . 'px',
+			'--yuniq-ai-fs'            => absint( $s->get( 'font_size', 14 ) ) . 'px',
+			'--yuniq-ai-greet-delay'   => absint( $s->get( 'greeting_delay', 2 ) ) . 's',
 		);
+
+		$custom_font = (string) $s->get( 'custom_font', '' );
+		if ( 'custom' === $s->get( 'font_family' ) && '' !== $custom_font ) {
+			$vars['--yuniq-ai-font'] = $custom_font . ', Tahoma, sans-serif';
+		}
+
+		// Bubble colors are optional; left unset, the stylesheet's theme-aware
+		// defaults apply. Text color is picked for contrast automatically.
+		foreach ( array( 'user' => 'user_bubble_color', 'bot' => 'bot_bubble_color' ) as $who => $key ) {
+			$color = (string) $s->get( $key, '' );
+			if ( $color ) {
+				$vars[ '--yuniq-ai-' . $who . '-bg' ]   = $color;
+				$vars[ '--yuniq-ai-' . $who . '-text' ] = self::is_light( $color ) ? '#14161c' : '#ffffff';
+			}
+		}
+
+		$style = '';
+		foreach ( $vars as $name => $value ) {
+			$style .= $name . ':' . $value . ';';
+		}
+
+		return $style;
+	}
+
+	/**
+	 * Whether a hex color is light enough to need dark text on top.
+	 *
+	 * @param string $hex `#rgb` or `#rrggbb`.
+	 * @return bool
+	 */
+	private static function is_light( $hex ) {
+		$hex = ltrim( $hex, '#' );
+		if ( 3 === strlen( $hex ) ) {
+			$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+		}
+
+		$r = hexdec( substr( $hex, 0, 2 ) );
+		$g = hexdec( substr( $hex, 2, 2 ) );
+		$b = hexdec( substr( $hex, 4, 2 ) );
+
+		return ( 0.299 * $r + 0.587 * $g + 0.114 * $b ) > 160;
+	}
+
+	/**
+	 * Root element classes derived from the settings.
+	 *
+	 * @param string $extra Space-prefixed extra class, or ''.
+	 * @return string
+	 */
+	private function root_classes( $extra ) {
+		$position = (string) $this->settings->get( 'widget_position', 'bottom-right' );
+		if ( ! in_array( $position, array( 'bottom-right', 'bottom-left', 'top-right', 'top-left' ), true ) ) {
+			$position = 'bottom-right';
+		}
+
+		$classes = array( 'yuniq-ai-root', 'yuniq-ai-pos-' . $position );
+
+		if ( 'inherit' === $this->settings->get( 'font_family' ) ) {
+			$classes[] = 'yuniq-ai-font-inherit';
+		}
+		if ( $this->settings->get( 'hide_on_mobile' ) ) {
+			$classes[] = 'yuniq-ai-hide-mobile';
+		}
+		if ( $this->settings->get( 'hide_on_desktop' ) ) {
+			$classes[] = 'yuniq-ai-hide-desktop';
+		}
+
+		return implode( ' ', $classes ) . $extra;
+	}
+
+	/**
+	 * Icon markup for the launcher button.
+	 *
+	 * @return string
+	 */
+	private function launcher_icon() {
+		return self::icon_markup(
+			(string) $this->settings->get( 'launcher_icon', 'bot' ),
+			(string) $this->settings->get( 'avatar_url', '' )
+		);
+	}
+
+	/**
+	 * Launcher icon markup, shared with the settings-screen preview.
+	 *
+	 * @param string $icon   One of bot, chat, sparkle, headset, avatar.
+	 * @param string $avatar Avatar image URL, used by the `avatar` icon.
+	 * @return string
+	 */
+	public static function icon_markup( $icon, $avatar = '' ) {
+		if ( 'avatar' === $icon && $avatar ) {
+			return '<img src="' . esc_url( $avatar ) . '" alt="" class="yuniq-ai-launcher-avatar" />';
+		}
+
+		switch ( $icon ) {
+			case 'chat':
+				return '<svg class="yuniq-ai-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+			case 'sparkle':
+				return '<svg class="yuniq-ai-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" opacity="0.75"/></svg>';
+			case 'headset':
+				return '<svg class="yuniq-ai-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><path d="M20 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM4 16a2 2 0 0 0 2 2h1v-6H6a2 2 0 0 0-2 2z"/><path d="M18 18v.5a2.5 2.5 0 0 1-2.5 2.5H13"/></svg>';
+		}
+
+		return '<svg class="yuniq-ai-bot" viewBox="0 0 48 48" aria-hidden="true" focusable="false">'
+			. '<line x1="24" y1="5" x2="24" y2="11" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'
+			. '<circle class="yuniq-ai-bot-antenna" cx="24" cy="5" r="3"/>'
+			. '<rect x="4" y="21" width="4.5" height="10" rx="2.25" fill="currentColor" opacity="0.75"/>'
+			. '<rect x="39.5" y="21" width="4.5" height="10" rx="2.25" fill="currentColor" opacity="0.75"/>'
+			. '<rect x="8" y="11" width="32" height="30" rx="11" fill="currentColor"/>'
+			. '<rect class="yuniq-ai-bot-visor" x="12" y="16.5" width="24" height="15" rx="7.5"/>'
+			. '<g class="yuniq-ai-bot-eyes"><rect x="16.5" y="20.5" width="4.5" height="7" rx="2.25"/><rect x="27" y="20.5" width="4.5" height="7" rx="2.25"/></g>'
+			. '<path class="yuniq-ai-bot-mouth" d="M20.5 35.5q3.5 2.2 7 0" fill="none" stroke-width="2" stroke-linecap="round"/>'
+			. '</svg>';
 	}
 
 	/**
@@ -268,7 +443,7 @@ final class Widget implements HookableInterface {
 	 * @return void
 	 */
 	public function render() {
-		if ( ! $this->is_active() || $this->rendered_full_page ) {
+		if ( ! $this->is_active() || $this->rendered_full_page || ! $this->is_shown_here() ) {
 			return;
 		}
 
@@ -297,7 +472,7 @@ final class Widget implements HookableInterface {
 		// Idempotent: registers/enqueues the same handle enqueue_assets()
 		// already queues on wp_enqueue_scripts, in case this page somehow
 		// missed that hook.
-		$this->enqueue_assets();
+		$this->enqueue_assets( true );
 
 		ob_start();
 		$this->render_markup( ' yuniq-ai-page-mode' );
@@ -314,33 +489,60 @@ final class Widget implements HookableInterface {
 	 */
 	private function render_markup( $extra_root_class ) {
 		$assistant_name = (string) $this->settings->get( 'assistant_name' );
-		$position_class = 'yuniq-ai-pos-' . sanitize_html_class( (string) $this->settings->get( 'widget_position', 'bottom-right' ) );
-		$header_style   = 'solid' === $this->settings->get( 'header_style' ) ? 'solid' : 'gradient';
+		$header_style   = (string) $this->settings->get( 'header_style', 'gradient' );
+		$header_style   = in_array( $header_style, array( 'gradient', 'brand', 'solid' ), true ) ? $header_style : 'gradient';
 		$logo_url       = $this->logo_url();
 		$header_sub     = (string) $this->settings->get( 'header_subtitle' );
 		$help_title     = (string) $this->settings->get( 'help_title' );
 		$help_sub       = (string) $this->settings->get( 'help_subtitle' );
+		$shape          = (string) $this->settings->get( 'launcher_shape', 'squircle' );
+		$launcher_label = (string) $this->settings->get( 'launcher_label', '' );
+		$is_pill        = 'pill' === $shape && '' !== $launcher_label;
+		$greet_title    = (string) $this->settings->get( 'greeting_title', '' );
+		$greet_text     = (string) $this->settings->get( 'greeting_text', '' );
+		$show_greeting  = $this->settings->get( 'greeting_enabled' ) && ( '' !== $greet_title || '' !== $greet_text );
+		$launcher_class = sprintf(
+			'yuniq-ai-launcher yuniq-ai-shape-%1$s yuniq-ai-launcher-%2$s',
+			$is_pill ? 'pill' : ( 'circle' === $shape ? 'circle' : 'squircle' ),
+			'solid' === $this->settings->get( 'launcher_bg' ) ? 'solid' : 'gradient'
+		);
+		$wrap_class     = 'yuniq-ai-launcher-wrap' . ( $show_greeting && $this->settings->get( 'greeting_delay' ) ? ' yuniq-ai-greet-auto' : '' );
+		$placeholder    = (string) $this->settings->get( 'input_placeholder', '' );
 		?>
 		<div id="yuniq-ai-root"
-			class="yuniq-ai-root <?php echo esc_attr( $position_class . $extra_root_class ); ?>"
+			class="<?php echo esc_attr( $this->root_classes( $extra_root_class ) ); ?>"
 			dir="rtl"
 			data-theme="<?php echo esc_attr( $this->theme() ); ?>"
 			style="<?php echo esc_attr( $this->brand_style() ); ?>">
 
-			<div class="yuniq-ai-launcher-wrap">
-				<button type="button" id="yuniq-ai-launcher" class="yuniq-ai-launcher"
+			<div class="<?php echo esc_attr( $wrap_class ); ?>">
+				<button type="button" id="yuniq-ai-launcher" class="<?php echo esc_attr( $launcher_class ); ?>"
 					aria-expanded="false"
 					aria-controls="yuniq-ai-panel"
 					aria-label="<?php echo esc_attr( sprintf( /* translators: %s: assistant name. */ __( 'باز کردن %s', 'yuniq-ai' ), $assistant_name ) ); ?>">
-					<span class="yuniq-ai-online-badge"></span>
+					<?php if ( $this->settings->get( 'show_online_badge' ) ) : ?>
+						<span class="yuniq-ai-online-badge"></span>
+					<?php endif; ?>
 					<span class="yuniq-ai-launcher-icon">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+						<?php echo $this->launcher_icon(); // phpcs:ignore WordPress.Security.EscapeOutput -- static markup; the only dynamic part (avatar URL) is escaped inside. ?>
 					</span>
+					<?php if ( $is_pill ) : ?>
+						<span class="yuniq-ai-launcher-label"><?php echo esc_html( $launcher_label ); ?></span>
+					<?php endif; ?>
 					<span class="yuniq-ai-launcher-close" aria-hidden="true">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</span>
 				</button>
-				<span class="yuniq-ai-launcher-tooltip" aria-hidden="true"><?php esc_html_e( 'با من صحبت کنید!', 'yuniq-ai' ); ?></span>
+				<?php if ( $show_greeting ) : ?>
+					<span class="yuniq-ai-launcher-tooltip" aria-hidden="true">
+						<?php if ( '' !== $greet_title ) : ?>
+							<strong><?php echo esc_html( $greet_title ); ?></strong>
+						<?php endif; ?>
+						<?php if ( '' !== $greet_text ) : ?>
+							<span><?php echo esc_html( $greet_text ); ?></span>
+						<?php endif; ?>
+					</span>
+				<?php endif; ?>
 			</div>
 
 			<div id="yuniq-ai-panel" class="yuniq-ai-panel"
@@ -349,7 +551,8 @@ final class Widget implements HookableInterface {
 				aria-labelledby="yuniq-ai-panel-title"
 				aria-hidden="true">
 
-				<header class="yuniq-ai-panel-header yuniq-ai-header-<?php echo esc_attr( $header_style ); ?>">
+				<?php // "brand" is a flat primary-color fill: it shares every white-on-color rule with the gradient header. ?>
+				<header class="yuniq-ai-panel-header <?php echo esc_attr( 'brand' === $header_style ? 'yuniq-ai-header-gradient yuniq-ai-header-flat' : 'yuniq-ai-header-' . $header_style ); ?>">
 					<span class="yuniq-ai-header-glow" aria-hidden="true"></span>
 					<div class="yuniq-ai-header-brand">
 						<?php if ( $logo_url ) : ?>
@@ -367,11 +570,13 @@ final class Widget implements HookableInterface {
 						</div>
 					</div>
 					<div class="yuniq-ai-header-controls">
-						<button type="button" class="yuniq-ai-ctrl-btn" id="yuniq-ai-theme-toggle"
-							aria-label="<?php esc_attr_e( 'تغییر حالت روشن و تاریک', 'yuniq-ai' ); ?>"
-							title="<?php esc_attr_e( 'تغییر حالت روشن و تاریک', 'yuniq-ai' ); ?>">
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-						</button>
+						<?php if ( $this->settings->get( 'show_theme_toggle' ) ) : ?>
+							<button type="button" class="yuniq-ai-ctrl-btn" id="yuniq-ai-theme-toggle"
+								aria-label="<?php esc_attr_e( 'تغییر حالت روشن و تاریک', 'yuniq-ai' ); ?>"
+								title="<?php esc_attr_e( 'تغییر حالت روشن و تاریک', 'yuniq-ai' ); ?>">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+							</button>
+						<?php endif; ?>
 						<button type="button" class="yuniq-ai-ctrl-btn" id="yuniq-ai-panel-close"
 							aria-label="<?php esc_attr_e( 'بستن گفتگو', 'yuniq-ai' ); ?>"
 							title="<?php esc_attr_e( 'بستن', 'yuniq-ai' ); ?>">
@@ -412,23 +617,26 @@ final class Widget implements HookableInterface {
 					<form id="yuniq-ai-chat-form" autocomplete="off">
 						<label class="yuniq-ai-sr-only" for="yuniq-ai-input"><?php esc_html_e( 'پیام شما', 'yuniq-ai' ); ?></label>
 						<textarea id="yuniq-ai-input" name="message" rows="1" maxlength="2000"
-							placeholder="<?php esc_attr_e( 'سوال خود را اینجا بنویسید...', 'yuniq-ai' ); ?>"></textarea>
+							placeholder="<?php echo esc_attr( '' !== $placeholder ? $placeholder : __( 'سوال خود را اینجا بنویسید...', 'yuniq-ai' ) ); ?>"></textarea>
 						<button type="submit" id="yuniq-ai-send" aria-label="<?php esc_attr_e( 'ارسال پیام', 'yuniq-ai' ); ?>">
 							<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
 						</button>
 					</form>
-					<div class="yuniq-ai-powered">
-						<?php
-						/**
-						 * Filters the credit line under the chat input.
-						 *
-						 * Return an empty string to remove it.
-						 *
-						 * @param string $html Credit markup.
-						 */
-						echo wp_kses_post( apply_filters( 'yuniq_ai_powered_by_html', esc_html__( 'قدرت‌گرفته با هوش مصنوعی | Yuniq.ai', 'yuniq-ai' ) ) );
-						?>
-					</div>
+					<?php
+					/**
+					 * Filters the credit line under the chat input.
+					 *
+					 * Return an empty string to remove it.
+					 *
+					 * @param string $html Credit markup.
+					 */
+					$powered = $this->settings->get( 'show_powered_by' )
+						? (string) apply_filters( 'yuniq_ai_powered_by_html', esc_html( (string) $this->settings->get( 'powered_by_text', '' ) ) )
+						: '';
+					?>
+					<?php if ( '' !== trim( $powered ) ) : ?>
+						<div class="yuniq-ai-powered"><?php echo wp_kses_post( $powered ); ?></div>
+					<?php endif; ?>
 				</footer>
 			</div>
 		</div>

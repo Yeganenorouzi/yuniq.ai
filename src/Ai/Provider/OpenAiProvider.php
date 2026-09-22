@@ -82,7 +82,7 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 
 		$args = array(
 			'method'  => 'POST',
-			'timeout' => 60,
+			'timeout' => $this->resolve_timeout( $options ),
 			'headers' => $this->request_headers(),
 			'body'    => wp_json_encode( $this->request_body( $messages, $options, $model, false ) ),
 		);
@@ -172,7 +172,7 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 				CURLOPT_POSTFIELDS     => wp_json_encode( $this->request_body( $messages, $options, $model, true ) ),
 				CURLOPT_RETURNTRANSFER => false,
 				CURLOPT_CONNECTTIMEOUT => 15,
-				CURLOPT_TIMEOUT        => 120,
+				CURLOPT_TIMEOUT        => max( 120, $this->resolve_timeout( $options ) ),
 				CURLOPT_WRITEFUNCTION  => function ( $handle, $data ) use ( &$buffer, &$content, &$tokens, &$raw, &$status, $on_chunk ) {
 					unset( $handle );
 
@@ -316,6 +316,87 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 		$model = isset( $options['model'] ) ? trim( (string) $options['model'] ) : '';
 
 		return $model ? $model : self::DEFAULT_MODEL;
+	}
+
+	/**
+	 * Request timeout in seconds, from the settings.
+	 *
+	 * @param array $options Provider options.
+	 * @return int
+	 */
+	private function resolve_timeout( array $options ) {
+		return ! empty( $options['timeout'] ) ? max( 10, (int) $options['timeout'] ) : 60;
+	}
+
+	/**
+	 * Base URL of the API (the endpoint without `/chat/completions`),
+	 * for side calls such as listing the available models.
+	 *
+	 * @return string
+	 */
+	public function base_url() {
+		return (string) preg_replace( '#/(chat/)?completions$#', '', $this->resolve_endpoint() );
+	}
+
+	/**
+	 * Ask the service which models this key can use.
+	 *
+	 * Most OpenAI-compatible services answer `GET {base}/models`; the ones
+	 * that don't simply return an error the settings screen shows as-is.
+	 *
+	 * @return array{success:bool, models?:string[], error?:string}
+	 */
+	public function list_models() {
+		if ( '' === $this->api_key ) {
+			return $this->missing_key_error();
+		}
+
+		$response = wp_remote_get(
+			$this->base_url() . '/models',
+			array(
+				'timeout' => 20,
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $this->api_key,
+					'Accept'        => 'application/json',
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return array(
+				'success' => false,
+				'error'   => $response->get_error_message(),
+			);
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		$data = is_array( $data ) ? $data : array();
+
+		if ( $code < 200 || $code >= 300 ) {
+			return array(
+				'success' => false,
+				'error'   => $this->describe_error( $code, $data ),
+			);
+		}
+
+		$rows   = isset( $data['data'] ) && is_array( $data['data'] ) ? $data['data'] : ( isset( $data['models'] ) && is_array( $data['models'] ) ? $data['models'] : array() );
+		$models = array();
+
+		foreach ( $rows as $row ) {
+			$id = is_array( $row ) ? ( isset( $row['id'] ) ? $row['id'] : ( isset( $row['name'] ) ? $row['name'] : '' ) ) : $row;
+
+			if ( is_string( $id ) && '' !== $id ) {
+				$models[] = preg_replace( '#^models/#', '', $id );
+			}
+		}
+
+		sort( $models );
+
+		return array(
+			'success' => true,
+			'models'  => array_values( array_unique( $models ) ),
+		);
 	}
 
 	/**

@@ -24,12 +24,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Client {
 
 	/**
-	 * How many conversation turns are replayed to the model.
+	 * Default number of conversation turns replayed to the model.
 	 */
 	const HISTORY_LIMIT = 6;
 
 	/**
-	 * How many knowledge base documents are attached to a question.
+	 * Default number of knowledge base documents attached to a question.
 	 *
 	 * Every document costs input tokens, which the visitor pays for in
 	 * waiting time before the first word appears.
@@ -211,6 +211,7 @@ final class Client {
 			'model'       => $this->settings->get( 'model' ),
 			'temperature' => $this->settings->get( 'temperature', 0.7 ),
 			'max_tokens'  => $this->settings->get( 'max_tokens', 1024 ),
+			'timeout'     => (int) $this->settings->get( 'request_timeout', 60 ),
 		);
 	}
 
@@ -229,7 +230,9 @@ final class Client {
 			),
 		);
 
-		foreach ( array_slice( $history, -self::HISTORY_LIMIT ) as $turn ) {
+		$limit = (int) $this->settings->get( 'history_limit', self::HISTORY_LIMIT );
+
+		foreach ( $limit > 0 ? array_slice( $history, -$limit ) : array() as $turn ) {
 			if ( isset( $turn['role'], $turn['content'] ) ) {
 				$messages[] = array(
 					'role'    => sanitize_text_field( $turn['role'] ),
@@ -268,7 +271,7 @@ final class Client {
 
 		$prompt .= $this->build_forms_hint();
 
-		$context = $this->knowledge_base->get_context_for_query( $user_message, self::CONTEXT_DOCUMENTS );
+		$context = $this->knowledge_base->get_context_for_query( $user_message, max( 1, (int) $this->settings->get( 'context_documents', self::CONTEXT_DOCUMENTS ) ) );
 
 		if ( '' !== $context ) {
 			$prompt .= "\n\n=== Website Knowledge Base (use this) ===\n" . $context . "\n=== End of Knowledge Base ===\n";

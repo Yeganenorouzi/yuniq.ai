@@ -59,6 +59,15 @@
 	--yuniq-ai-secondary: #111b55;
 	--yuniq-ai-radius: 20px;
 
+	/* Layout — overridden inline from the settings screen. */
+	--yuniq-ai-panel-w: 420px;
+	--yuniq-ai-panel-h: 720px;
+	--yuniq-ai-off-x: 24px;
+	--yuniq-ai-off-y: 24px;
+	--yuniq-ai-launcher-size: 62px;
+	--yuniq-ai-fs: 14px;
+	--yuniq-ai-greet-delay: 2s;
+
 	/* Derived brand tints. */
 	--yuniq-ai-primary-soft: color-mix(in srgb, var(--yuniq-ai-primary) 10%, transparent);
 	--yuniq-ai-primary-ring: color-mix(in srgb, var(--yuniq-ai-primary) 22%, transparent);
@@ -143,7 +152,7 @@
 	position: fixed;
 	z-index: 2147483000;
 	font-family: var(--yuniq-ai-font);
-	font-size: 14px;
+	font-size: var(--yuniq-ai-fs);
 	line-height: 1.6;
 	color: var(--yuniq-ai-text);
 	direction: rtl;
@@ -194,10 +203,26 @@
 }
 
 /* Position — desktop. */
-#yuniq-ai-root.yuniq-ai-pos-bottom-right { bottom: 24px; right: 24px; }
-#yuniq-ai-root.yuniq-ai-pos-bottom-left  { bottom: 24px; left: 24px; }
-#yuniq-ai-root.yuniq-ai-pos-top-right    { top: 24px; right: 24px; }
-#yuniq-ai-root.yuniq-ai-pos-top-left     { top: 24px; left: 24px; }
+/* Position. --yuniq-ai-off-* come inline from the settings; the mobile
+   block sets --yuniq-ai-edge-* instead, because an inline value would
+   always beat a stylesheet override of the same variable. */
+#yuniq-ai-root.yuniq-ai-pos-bottom-right { bottom: var(--yuniq-ai-edge-y, var(--yuniq-ai-off-y)); right: var(--yuniq-ai-edge-x, var(--yuniq-ai-off-x)); }
+#yuniq-ai-root.yuniq-ai-pos-bottom-left  { bottom: var(--yuniq-ai-edge-y, var(--yuniq-ai-off-y)); left: var(--yuniq-ai-edge-x, var(--yuniq-ai-off-x)); }
+#yuniq-ai-root.yuniq-ai-pos-top-right    { top: var(--yuniq-ai-edge-y, var(--yuniq-ai-off-y)); right: var(--yuniq-ai-edge-x, var(--yuniq-ai-off-x)); }
+#yuniq-ai-root.yuniq-ai-pos-top-left     { top: var(--yuniq-ai-edge-y, var(--yuniq-ai-off-y)); left: var(--yuniq-ai-edge-x, var(--yuniq-ai-off-x)); }
+
+/* The site's own font instead of the bundled Vazirmatn. */
+#yuniq-ai-root.yuniq-ai-root.yuniq-ai-font-inherit {
+	font-family: inherit;
+}
+
+/* Visibility per device. */
+@media (max-width: 640px) {
+	#yuniq-ai-root.yuniq-ai-hide-mobile { display: none !important; }
+}
+@media (min-width: 641px) {
+	#yuniq-ai-root.yuniq-ai-hide-desktop { display: none !important; }
+}
 
 /* =========================================================
    LAUNCHER
@@ -211,31 +236,136 @@
 
 #yuniq-ai-root .yuniq-ai-launcher {
 	position: relative;
-	width: 58px;
-	height: 58px;
-	border-radius: 50%;
-	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
+	width: var(--yuniq-ai-launcher-size);
+	height: var(--yuniq-ai-launcher-size);
+	border-radius: calc(var(--yuniq-ai-launcher-size) * 0.35);
+	background:
+		radial-gradient(120% 90% at 30% 15%, color-mix(in srgb, #fff 22%, transparent) 0%, transparent 55%),
+		linear-gradient(145deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
 	color: var(--yuniq-ai-on-primary);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	box-shadow: var(--yuniq-ai-shadow-launcher);
+	box-shadow: var(--yuniq-ai-shadow-launcher),
+		inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent);
 	transition: transform var(--yuniq-ai-dur) var(--yuniq-ai-ease),
-		box-shadow var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+		box-shadow var(--yuniq-ai-dur) var(--yuniq-ai-ease),
+		border-radius var(--yuniq-ai-dur-slow) var(--yuniq-ai-ease);
 }
 
 #yuniq-ai-root .yuniq-ai-launcher:hover {
-	transform: translateY(-2px) scale(1.04);
-	box-shadow: 0 10px 28px -6px color-mix(in srgb, var(--yuniq-ai-primary) 55%, transparent);
+	transform: translateY(-3px) rotate(-4deg);
+	box-shadow: 0 12px 30px -6px color-mix(in srgb, var(--yuniq-ai-primary) 60%, transparent),
+		inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent);
 }
 #yuniq-ai-root .yuniq-ai-launcher:active {
-	transform: translateY(0) scale(0.97);
+	transform: translateY(0) scale(0.95);
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher,
+#yuniq-ai-root .yuniq-ai-launcher.yuniq-ai-shape-circle {
+	border-radius: 50%;
+}
+
+/* Flat fill instead of the two-color gradient. */
+#yuniq-ai-root .yuniq-ai-launcher.yuniq-ai-launcher-solid {
+	background: var(--yuniq-ai-primary);
+}
+
+/* Pill: icon plus a text label. Collapses back to a circle while open. */
+#yuniq-ai-root .yuniq-ai-launcher.yuniq-ai-shape-pill {
+	width: auto;
+	gap: 8px;
+	padding-inline: calc(var(--yuniq-ai-launcher-size) * 0.18) calc(var(--yuniq-ai-launcher-size) * 0.32);
+	border-radius: 999px;
+}
+#yuniq-ai-root .yuniq-ai-launcher-label {
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+	line-height: 1;
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher.yuniq-ai-shape-pill {
+	width: var(--yuniq-ai-launcher-size);
+	padding: 0;
+}
+#yuniq-ai-root.is-open .yuniq-ai-launcher-label {
+	display: none;
+}
+#yuniq-ai-root.is-open .yuniq-ai-shape-pill .yuniq-ai-launcher-icon {
+	position: absolute;
+}
+
+/* Custom avatar from the settings screen fills the launcher. */
+#yuniq-ai-root .yuniq-ai-launcher-avatar {
+	width: var(--yuniq-ai-launcher-size);
+	height: var(--yuniq-ai-launcher-size);
+	border-radius: inherit;
+	object-fit: cover;
+	display: block;
+}
+#yuniq-ai-root .yuniq-ai-shape-pill .yuniq-ai-launcher-avatar {
+	width: calc(var(--yuniq-ai-launcher-size) * 0.72);
+	height: calc(var(--yuniq-ai-launcher-size) * 0.72);
+	border-radius: 50%;
+}
+#yuniq-ai-root .yuniq-ai-launcher-icon {
+	border-radius: inherit;
+}
+#yuniq-ai-root .yuniq-ai-glyph {
+	width: calc(var(--yuniq-ai-launcher-size) * 0.42);
+	height: calc(var(--yuniq-ai-launcher-size) * 0.42);
+	display: block;
+}
+
+/* Built-in robot. */
+#yuniq-ai-root .yuniq-ai-bot {
+	width: calc(var(--yuniq-ai-launcher-size) * 0.68);
+	height: calc(var(--yuniq-ai-launcher-size) * 0.68);
+	display: block;
+	overflow: visible;
+	animation: yuniq-ai-bob 3.2s ease-in-out infinite;
+}
+#yuniq-ai-root .yuniq-ai-bot-visor {
+	fill: var(--yuniq-ai-secondary);
+}
+#yuniq-ai-root .yuniq-ai-bot-eyes {
+	fill: #6ff3ff;
+	filter: drop-shadow(0 0 2px #6ff3ff);
+	transform-box: fill-box;
+	transform-origin: center;
+	transition: transform var(--yuniq-ai-dur) var(--yuniq-ai-ease);
+	animation: yuniq-ai-blink 4.5s infinite;
+}
+#yuniq-ai-root .yuniq-ai-bot-mouth {
+	stroke: var(--yuniq-ai-secondary);
+	opacity: 0.55;
+}
+#yuniq-ai-root .yuniq-ai-bot-antenna {
+	fill: #ffd54a;
+	animation: yuniq-ai-antenna 1.8s ease-in-out infinite;
+}
+/* Eyes glance toward the page (inline-start in RTL = right side of the bot). */
+#yuniq-ai-root .yuniq-ai-launcher:hover .yuniq-ai-bot-eyes {
+	translate: -1.5px -0.5px;
+}
+@keyframes yuniq-ai-bob {
+	0%, 100% { transform: translateY(0); }
+	50%      { transform: translateY(-2px); }
+}
+@keyframes yuniq-ai-blink {
+	0%, 90%, 100% { transform: scaleY(1); }
+	94%           { transform: scaleY(0.1); }
+}
+@keyframes yuniq-ai-antenna {
+	0%, 100% { opacity: 1; }
+	50%      { opacity: 0.45; }
 }
 
 #yuniq-ai-root .yuniq-ai-online-badge {
 	position: absolute;
-	top: 3px;
-	inset-inline-end: 3px;
+	z-index: 1;
+	top: -3px;
+	inset-inline-end: -3px;
 	width: 12px;
 	height: 12px;
 	background: var(--yuniq-ai-online);
@@ -269,30 +399,84 @@
 	opacity: 0;
 }
 
-/* Tooltip — hover and keyboard focus, never while open. */
+/* Greeting bubble — beside the launcher, on the side facing the page, so
+   it can never run off the screen edge. Pops up once after load, then on
+   hover and keyboard focus; never while open.
+   Physical left/right on purpose: which side is safe depends on the
+   widget's screen corner, not on the text direction. */
 #yuniq-ai-root .yuniq-ai-launcher-tooltip {
 	position: absolute;
-	bottom: calc(100% + 10px);
-	inset-inline-end: 0;
+	top: 50%;
+	right: calc(100% + 14px);
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
 	white-space: nowrap;
-	background: var(--yuniq-ai-secondary);
-	color: #fff;
-	font-size: 12.5px;
-	font-weight: 500;
-	padding: 7px 12px;
-	border-radius: 10px;
-	box-shadow: var(--yuniq-ai-shadow-md);
+	background: var(--yuniq-ai-surface);
+	color: var(--yuniq-ai-text);
+	border: 1px solid var(--yuniq-ai-border);
+	font-size: 13px;
+	line-height: 1.5;
+	padding: 9px 14px;
+	border-radius: 14px;
+	box-shadow: var(--yuniq-ai-shadow-lg);
 	opacity: 0;
-	transform: translateY(4px);
+	transform: translate(6px, -50%) scale(0.96);
+	transform-origin: right center;
 	pointer-events: none;
 	transition: opacity var(--yuniq-ai-dur) var(--yuniq-ai-ease),
 		transform var(--yuniq-ai-dur) var(--yuniq-ai-ease);
 }
+#yuniq-ai-root .yuniq-ai-greet-auto .yuniq-ai-launcher-tooltip {
+	animation: yuniq-ai-greet 6s var(--yuniq-ai-ease) var(--yuniq-ai-greet-delay);
+}
+#yuniq-ai-root .yuniq-ai-launcher-tooltip strong {
+	font-weight: 700;
+	font-size: 13.5px;
+}
+#yuniq-ai-root .yuniq-ai-launcher-tooltip span {
+	color: var(--yuniq-ai-text-muted);
+	font-size: 12.5px;
+}
+/* Tail pointing at the launcher. */
+#yuniq-ai-root .yuniq-ai-launcher-tooltip::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	right: -6px;
+	width: 10px;
+	height: 10px;
+	background: inherit;
+	border: 1px solid var(--yuniq-ai-border);
+	border-left: 0;
+	border-bottom: 0;
+	transform: translateY(-50%) rotate(45deg);
+}
+
+#yuniq-ai-root.yuniq-ai-pos-bottom-left .yuniq-ai-launcher-tooltip,
+#yuniq-ai-root.yuniq-ai-pos-top-left .yuniq-ai-launcher-tooltip {
+	right: auto;
+	left: calc(100% + 14px);
+	transform: translate(-6px, -50%) scale(0.96);
+	transform-origin: left center;
+}
+#yuniq-ai-root.yuniq-ai-pos-bottom-left .yuniq-ai-launcher-tooltip::after,
+#yuniq-ai-root.yuniq-ai-pos-top-left .yuniq-ai-launcher-tooltip::after {
+	right: auto;
+	left: -6px;
+	transform: translateY(-50%) rotate(-135deg);
+}
+
 #yuniq-ai-root .yuniq-ai-launcher-wrap:hover .yuniq-ai-launcher-tooltip,
 #yuniq-ai-root .yuniq-ai-launcher:focus-visible + .yuniq-ai-launcher-tooltip,
 #yuniq-ai-root .yuniq-ai-launcher-wrap:focus-within .yuniq-ai-launcher-tooltip {
 	opacity: 1;
-	transform: translateY(0);
+	transform: translate(0, -50%) scale(1);
+}
+@keyframes yuniq-ai-greet {
+	0%       { opacity: 0; }
+	8%, 88%  { opacity: 1; transform: translate(0, -50%) scale(1); }
+	100%     { opacity: 0; }
 }
 #yuniq-ai-root.is-open .yuniq-ai-launcher-tooltip {
 	display: none;
@@ -303,8 +487,8 @@
    ========================================================= */
 #yuniq-ai-root .yuniq-ai-panel {
 	position: absolute;
-	width: 420px;
-	height: min(720px, calc(100vh - 120px));
+	width: min(var(--yuniq-ai-panel-w), calc(100vw - 32px));
+	height: min(var(--yuniq-ai-panel-h), calc(100vh - 120px));
 	max-height: calc(100vh - 120px);
 	background: var(--yuniq-ai-bg);
 	border: 1px solid var(--yuniq-ai-border);
@@ -370,6 +554,9 @@
 
 #yuniq-ai-root .yuniq-ai-header-gradient {
 	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
+}
+#yuniq-ai-root .yuniq-ai-header-gradient.yuniq-ai-header-flat {
+	background: var(--yuniq-ai-primary);
 }
 
 /* A soft blurred glow behind the brand mark — purely decorative, and the
@@ -577,7 +764,7 @@
 	max-width: 85%;
 	padding: 9px 13px;
 	border-radius: 14px;
-	font-size: 13.5px;
+	font-size: calc(var(--yuniq-ai-fs) - 0.5px);
 	line-height: 1.65;
 	word-wrap: break-word;
 	overflow-wrap: anywhere;
@@ -590,14 +777,14 @@
 
 #yuniq-ai-root .yuniq-ai-msg-user {
 	align-self: flex-start;
-	background: linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%);
-	color: var(--yuniq-ai-on-primary);
+	background: var(--yuniq-ai-user-bg, linear-gradient(135deg, var(--yuniq-ai-primary) 0%, var(--yuniq-ai-secondary) 100%));
+	color: var(--yuniq-ai-user-text, var(--yuniq-ai-on-primary));
 	border-end-start-radius: 4px;
 }
 #yuniq-ai-root .yuniq-ai-msg-assistant {
 	align-self: flex-end;
-	background: var(--yuniq-ai-surface);
-	color: var(--yuniq-ai-text);
+	background: var(--yuniq-ai-bot-bg, var(--yuniq-ai-surface));
+	color: var(--yuniq-ai-bot-text, var(--yuniq-ai-text));
 	border: 1px solid var(--yuniq-ai-border);
 	border-end-end-radius: 4px;
 	box-shadow: var(--yuniq-ai-shadow-sm);
@@ -777,7 +964,7 @@
 	border: 0;
 	background: transparent;
 	padding: 8px 6px;
-	font-size: 14px;
+	font-size: var(--yuniq-ai-fs);
 	line-height: 1.5;
 	color: var(--yuniq-ai-text);
 	text-align: right;
@@ -839,14 +1026,10 @@
    MOBILE — full-screen sheet
    ========================================================= */
 @media (max-width: 640px) {
-	#yuniq-ai-root.yuniq-ai-pos-bottom-right,
-	#yuniq-ai-root.yuniq-ai-pos-bottom-left,
-	#yuniq-ai-root.yuniq-ai-pos-top-right,
-	#yuniq-ai-root.yuniq-ai-pos-top-left {
-		bottom: 16px;
-		inset-inline-end: 16px;
-		inset-inline-start: auto;
-		top: auto;
+	/* Same corner as on desktop, only tighter to the edge. */
+	#yuniq-ai-root.yuniq-ai-root {
+		--yuniq-ai-edge-x: min(var(--yuniq-ai-off-x), 16px);
+		--yuniq-ai-edge-y: min(var(--yuniq-ai-off-y), 16px);
 	}
 
 	#yuniq-ai-root .yuniq-ai-panel {
@@ -916,32 +1099,6 @@ body.yuniq-ai-open {
 	#yuniq-ai-root .yuniq-ai-ticker-chip {
 		border: 1px solid CanvasText;
 	}
-}
-
-/* =========================================================
-   LAUNCHER — signature pulsing ring
-   A plain circle is what every other chat widget uses; this ring is the
-   one deliberately distinct visual signature carried across the launcher.
-   Purely decorative, so it is safe to zero out under reduced motion along
-   with everything else in that media block above.
-   ========================================================= */
-#yuniq-ai-root .yuniq-ai-launcher::before {
-	content: "";
-	position: absolute;
-	inset: -6px;
-	border-radius: 50%;
-	border: 2px solid var(--yuniq-ai-primary);
-	opacity: 0.55;
-	animation: yuniq-ai-ring 2.4s var(--yuniq-ai-ease) infinite;
-	pointer-events: none;
-}
-#yuniq-ai-root.is-open .yuniq-ai-launcher::before {
-	display: none;
-}
-@keyframes yuniq-ai-ring {
-	0%   { transform: scale(1); opacity: 0.55; }
-	70%  { transform: scale(1.35); opacity: 0; }
-	100% { transform: scale(1.35); opacity: 0; }
 }
 
 /* =========================================================

@@ -291,7 +291,7 @@ final class ChatController implements HookableInterface {
 				'logo_url'          => $this->settings->get( 'logo_url' ),
 				'primary_color'     => $this->settings->get( 'primary_color' ),
 				'secondary_color'   => $this->settings->get( 'secondary_color' ),
-				'button_icon'       => $this->settings->get( 'button_icon' ),
+				'launcher_icon'       => $this->settings->get( 'launcher_icon' ),
 				'widget_position'   => $this->settings->get( 'widget_position' ),
 				'custom_position_x' => (int) $this->settings->get( 'custom_position_x' ),
 				'custom_position_y' => (int) $this->settings->get( 'custom_position_y' ),

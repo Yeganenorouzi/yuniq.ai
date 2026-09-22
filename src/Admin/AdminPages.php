@@ -8,6 +8,7 @@
 
 namespace Yuniq\Ai\Admin;
 
+use Yuniq\Ai\Ai\Presets;
 use Yuniq\Ai\Analytics\Repository as Analytics;
 use Yuniq\Ai\Contracts\HookableInterface;
 use Yuniq\Ai\Kb\Indexer;
@@ -249,7 +250,17 @@ final class AdminPages implements HookableInterface {
 			array(
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( Ajax\CrawlController::NONCE_ACTION ),
+				'presets' => Presets::all(),
 				'i18n'    => array(
+					'testing'           => __( 'در حال ارسال یک پیام آزمایشی...', 'yuniq-ai' ),
+					'loadingModels'     => __( 'در حال دریافت فهرست مدل‌ها...', 'yuniq-ai' ),
+					'modelsLoaded'      => __( 'مدل در دسترس است. روی هر کدام بزنید تا انتخاب شود.', 'yuniq-ai' ),
+					'noModels'          => __( 'سرویس فهرستی برنگرداند؛ نام مدل را از مستندات سرویس بردارید.', 'yuniq-ai' ),
+					'requestFailed'     => __( 'درخواست به سرور وردپرس انجام نشد.', 'yuniq-ai' ),
+					'suggestedModels'   => __( 'مدل‌های پیشنهادی:', 'yuniq-ai' ),
+					'getKey'            => __( 'دریافت کلید API', 'yuniq-ai' ),
+					'replaceEndpoint'   => __( 'آدرس فعلی با آدرس این سرویس جایگزین شود؟', 'yuniq-ai' ),
+					'replacePrompt'     => __( 'متن فعلی پرامپت سیستم با این قالب جایگزین شود؟', 'yuniq-ai' ),
 					'crawling'        => __( 'در حال ایندکس‌گذاری...', 'yuniq-ai' ),
 					'completed'       => __( 'ایندکس‌گذاری با موفقیت انجام شد!', 'yuniq-ai' ),
 					'completedShort'  => __( 'تکمیل‌شده', 'yuniq-ai' ),

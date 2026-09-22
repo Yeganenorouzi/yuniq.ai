@@ -9,6 +9,7 @@
 namespace Yuniq\Ai;
 
 use Yuniq\Ai\Admin\AdminPages;
+use Yuniq\Ai\Admin\Ajax\ConnectionController;
 use Yuniq\Ai\Admin\Ajax\CrawlController;
 use Yuniq\Ai\Admin\Ajax\LiveSupportController as LiveSupportAjaxController;
 use Yuniq\Ai\Ai\Client;
@@ -137,6 +138,7 @@ final class Plugin {
 		if ( is_admin() ) {
 			$services[] = AdminPages::class;
 			$services[] = CrawlController::class;
+			$services[] = ConnectionController::class;
 			$services[] = LiveSupportAjaxController::class;
 		}
 
@@ -255,6 +257,13 @@ final class Plugin {
 			CrawlController::class,
 			function ( Container $c ) {
 				return new CrawlController( $c->get( Indexer::class ), $c->get( KnowledgeBase::class ) );
+			}
+		);
+
+		$this->container->set(
+			ConnectionController::class,
+			function ( Container $c ) {
+				return new ConnectionController( $c->get( Settings::class ) );
 			}
 		);
 

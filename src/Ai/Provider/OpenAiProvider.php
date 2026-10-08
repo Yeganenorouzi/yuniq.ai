@@ -475,6 +475,12 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 			$detail = $data['message'];
 		}
 
+		// Gateways report an empty balance as 402 or as a 429 "quota" error.
+		// That is not a rate limit, and waiting does not fix it.
+		if ( 402 === $code || preg_match( '/credit|balance|billing|insufficient|quota|top.?up|اعتبار|موجودی/iu', $detail ) ) {
+			return __( 'اعتبار حساب شما در سرویس هوش مصنوعی تمام شده است. حساب را در پنل همان سرویس شارژ کنید.', 'yuniq-ai' ) . ( $detail ? ' ' . $detail : '' );
+		}
+
 		switch ( $code ) {
 			case 401:
 			case 403:

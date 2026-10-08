@@ -85,8 +85,21 @@ final class Settings {
 			'wc_products'           => true,
 			'wc_product_categories' => true,
 			'wc_product_tags'       => true,
-			'wc_attributes'         => false,
+			'wc_attributes'         => true,
+			'wc_variations'         => true,
+			'wc_short_desc'         => true,
+			'wc_price'              => true,
+			'wc_stock'              => true,
+			'wc_sku'                => true,
+			'wc_dimensions'         => false,
 			'wc_reviews'            => false,
+			'wc_skip_outofstock'    => false,
+			'wc_skip_hidden'        => true,
+			'index_custom_fields'   => false,
+			'site_profile'          => true,
+			'context_detail'        => 'normal',
+			'business_info'         => '',
+			'synonyms'              => '',
 			'wp_pages'              => true,
 			'wp_posts'              => true,
 			'wp_categories'         => true,
@@ -313,7 +326,17 @@ final class Settings {
 			'wc_products',
 			'wc_product_tags',
 			'wc_attributes',
+			'wc_variations',
+			'wc_short_desc',
+			'wc_price',
+			'wc_stock',
+			'wc_sku',
+			'wc_dimensions',
 			'wc_reviews',
+			'wc_skip_outofstock',
+			'wc_skip_hidden',
+			'index_custom_fields',
+			'site_profile',
 			'wp_pages',
 			'wp_posts',
 			'wp_categories',
@@ -329,6 +352,10 @@ final class Settings {
 			: array();
 
 		$output['content_types'] = $this->derive_content_types( $output );
+
+		$output['context_detail'] = self::pick( $input, 'context_detail', array_keys( self::choices( 'context_detail' ) ), 'normal' );
+		$output['business_info']  = isset( $input['business_info'] ) ? Support\Text::truncate( sanitize_textarea_field( $input['business_info'] ), 4000, '' ) : '';
+		$output['synonyms']       = isset( $input['synonyms'] ) ? Support\Text::truncate( sanitize_textarea_field( $input['synonyms'] ), 4000, '' ) : '';
 
 		// --- Presentation -----------------------------------------------------
 		$text_fields = array(
@@ -496,6 +523,11 @@ final class Settings {
 			'links_policy'   => array(
 				'on_request' => array( 'فقط وقتی بخواهد', 'لینک فقط با درخواست صریح بازدیدکننده' ),
 				'helpful'    => array( 'هر جا مفید بود', 'لینک صفحه مرتبط را خودش پیشنهاد می‌دهد' ),
+			),
+			'context_detail' => array(
+				'compact' => array( 'خلاصه', 'کم‌هزینه‌ترین؛ برای صفحات کوتاه' ),
+				'normal'  => array( 'معمولی', 'تعادل دقت و هزینه (پیشنهادی)' ),
+				'full'    => array( 'کامل', 'متن بلند هر صفحه؛ دقیق‌تر ولی گران‌تر' ),
 			),
 			'rate_profile'   => array(
 				'strict'   => array( 'سخت‌گیرانه', 'هر بازدیدکننده ۱۰ پیام در ۱۰ دقیقه؛ کمترین هزینه' ),

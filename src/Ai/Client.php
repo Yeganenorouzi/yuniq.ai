@@ -279,7 +279,7 @@ final class Client {
 		$messages = array(
 			array(
 				'role'    => 'system',
-				'content' => $this->build_system_prompt( $user_message ),
+				'content' => $this->build_system_prompt( $user_message, $history ),
 			),
 		);
 
@@ -319,9 +319,10 @@ final class Client {
 	 * Compose the system message, including retrieved site content.
 	 *
 	 * @param string $user_message The visitor's question.
+	 * @param array  $history      Prior turns, used to keep follow-up questions on topic.
 	 * @return string
 	 */
-	private function build_system_prompt( $user_message ) {
+	private function build_system_prompt( $user_message, array $history = array() ) {
 		$prompt = (string) $this->settings->get( 'system_prompt', '' );
 
 		$prompt .= "\n\nYou are the official AI assistant of this website. Rules:\n"
@@ -330,7 +331,7 @@ final class Client {
 			. '3) ' . $this->links_rule() . "\n"
 			. '4) ' . $this->language_rule() . "\n"
 			. '5) ' . $this->style_rule() . "\n"
-			. "6) If knowledge base has no match, say so briefly and still try to help. Never invent prices, stock or policies that are not in the knowledge base.\n"
+			. "6) If knowledge base has no match, say so briefly and still try to help. Never invent prices, stock, colours, variations or policies that are not in the knowledge base. When a product lists Attributes or Variations, those lists are the complete set of available options: answer questions about colours, sizes, storage and the like from them.\n"
 			. "7) HANDOFF: if you genuinely cannot help (the knowledge base has nothing relevant and the question needs a human, or the visitor is frustrated/asks for a human), write your best short reply and then add a new line containing exactly [[NEED_HUMAN]] and nothing else on that line. Never mention this token to the user, never explain it — it is stripped before they see your message.\n"
 			. "8) PRODUCT CARD: when you recommend one specific product from the knowledge base, add a new line at the end containing exactly [[PRODUCT:ID]] (replace ID with the numeric id shown for that product below). Only ever include one per reply, and only when a specific product is clearly the right recommendation.\n"
 			. "9) LEAD FORM: if one of the \"Available forms\" listed below clearly matches what the visitor wants (e.g. they ask for a consultation/quote/callback), add a new line at the end containing exactly [[FORM:key]] (replace key with that form's key). Only ever include one per reply.\n";
@@ -341,7 +342,21 @@ final class Client {
 
 		$prompt .= $this->build_forms_hint();
 
-		$context = $this->knowledge_base->get_context_for_query( $user_message, max( 1, (int) $this->settings->get( 'context_documents', self::CONTEXT_DOCUMENTS ) ) );
+		$prompt .= $this->build_site_profile();
+
+		$detail  = array(
+			'compact' => 700,
+			'normal'  => 1100,
+			'full'    => 2600,
+		);
+		$chosen  = (string) $this->settings->get( 'context_detail', 'normal' );
+		$context = $this->knowledge_base->get_context_for_query(
+			$user_message,
+			max( 1, (int) $this->settings->get( 'context_documents', self::CONTEXT_DOCUMENTS ) ),
+			$this->conversation_subject( $history ),
+			isset( $detail[ $chosen ] ) ? $detail[ $chosen ] : $detail['normal'],
+			Text::parse_synonyms( (string) $this->settings->get( 'synonyms', '' ) )
+		);
 
 		if ( '' !== $context ) {
 			$prompt .= "\n\n=== Website Knowledge Base (use this) ===\n" . $context . "\n=== End of Knowledge Base ===\n";
@@ -357,6 +372,58 @@ final class Client {
 		 * @param string $context      Retrieved knowledge base context.
 		 */
 		return (string) apply_filters( 'yuniq_ai_system_prompt', $prompt, $user_message, $context );
+	}
+
+	/**
+	 * What the last exchange was about, as extra search words.
+	 *
+	 * A follow-up like «چه رنگ‌هایی داری؟» names no product. The previous
+	 * question and the start of the previous answer usually do.
+	 *
+	 * @param array $history Prior turns from the browser.
+	 * @return string
+	 */
+	private function conversation_subject( array $history ) {
+		$last = array(
+			'user'      => '',
+			'assistant' => '',
+		);
+
+		foreach ( array_slice( $history, -6 ) as $turn ) {
+			if ( is_array( $turn ) && isset( $turn['role'], $turn['content'] ) && is_string( $turn['content'] ) && isset( $last[ $turn['role'] ] ) ) {
+				$last[ $turn['role'] ] = $turn['content'];
+			}
+		}
+
+		return Text::truncate( sanitize_textarea_field( $last['user'] ), 200, '' ) . ' ' . Text::truncate( sanitize_textarea_field( $last['assistant'] ), 160, '' );
+	}
+
+	/**
+	 * Facts about the business that go with every question: who the site
+	 * is, what the owner wrote about it, and a map of what is on it.
+	 *
+	 * @return string
+	 */
+	private function build_site_profile() {
+		$profile = "\n\n=== About this website (always true) ===\n"
+			. 'Name: ' . wp_strip_all_tags( get_bloginfo( 'name' ) ) . "\n"
+			. 'Address: ' . home_url( '/' ) . "\n";
+
+		$tagline = wp_strip_all_tags( get_bloginfo( 'description' ) );
+		if ( '' !== $tagline ) {
+			$profile .= 'Tagline: ' . $tagline . "\n";
+		}
+
+		$info = trim( (string) $this->settings->get( 'business_info', '' ) );
+		if ( '' !== $info ) {
+			$profile .= "Information from the site owner (contact, hours, shipping, returns, payment):\n" . $info . "\n";
+		}
+
+		if ( $this->settings->get( 'site_profile', true ) ) {
+			$profile .= $this->knowledge_base->site_overview();
+		}
+
+		return $profile . "=== End of About ===\n";
 	}
 
 	/**

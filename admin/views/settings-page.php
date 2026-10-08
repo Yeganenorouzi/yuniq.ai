@@ -436,7 +436,7 @@ $yq_design_defaults = array_intersect_key(
 			<div class="yuniq-ai-tab-panel" id="tab-crawler">
 				<div class="yuniq-ai-card">
 					<h2>انتخاب محتوای قابل ایندکس</h2>
-					<p class="description">فقط مواردی که تیک می‌زنید کرال و وارد پایگاه دانش می‌شوند. بعد از ذخیره، به «پایگاه دانش» بروید و ایندکس را اجرا کنید.</p>
+					<p class="description">دستیار فقط چیزهایی را می‌داند که اینجا تیک زده‌اید. هر تغییری در این تب بعد از «ذخیره» و اجرای دوباره ایندکس در «پایگاه دانش» اعمال می‌شود.</p>
 
 					<?php
 					// Detect public post types dynamically
@@ -452,8 +452,6 @@ $yq_design_defaults = array_intersect_key(
 							<label><input type="checkbox" name="yuniq_ai_settings[wc_products]" value="1" <?php checked( ! empty( $s['wc_products'] ) || ( ! isset( $s['wc_products'] ) && in_array( 'product', (array) ( $s['content_types'] ?? array() ), true ) ) ); ?> /> <strong>محصولات</strong> <code>product</code></label>
 							<label><input type="checkbox" name="yuniq_ai_settings[wc_product_categories]" value="1" <?php checked( ! empty( $s['wc_product_categories'] ) ); ?> /> دسته‌بندی محصولات <code>product_cat</code></label>
 							<label><input type="checkbox" name="yuniq_ai_settings[wc_product_tags]" value="1" <?php checked( ! empty( $s['wc_product_tags'] ) ); ?> /> برچسب محصولات <code>product_tag</code></label>
-							<label><input type="checkbox" name="yuniq_ai_settings[wc_attributes]" value="1" <?php checked( ! empty( $s['wc_attributes'] ) ); ?> /> ویژگی‌های محصول (همراه محصول)</label>
-							<label><input type="checkbox" name="yuniq_ai_settings[wc_reviews]" value="1" <?php checked( ! empty( $s['wc_reviews'] ) ); ?> /> نظرات محصولات (همراه محصول)</label>
 						</div>
 						<?php endif; ?>
 
@@ -484,6 +482,60 @@ $yq_design_defaults = array_intersect_key(
 						<?php endif; ?>
 					</div>
 
+						<?php
+						/**
+						 * Print one crawler checkbox with a short explanation.
+						 *
+						 * @param string $key   Setting name.
+						 * @param string $label What gets indexed.
+						 * @param string $hint  Example of what it lets the assistant answer.
+						 */
+						$yq_check = function ( $key, $label, $hint = '' ) use ( $s ) {
+							?>
+							<label class="yq-check-row">
+								<input type="checkbox" name="yuniq_ai_settings[<?php echo esc_attr( $key ); ?>]" value="1" <?php checked( ! empty( $s[ $key ] ) ); ?> />
+								<span><strong><?php echo esc_html( $label ); ?></strong><?php if ( $hint ) : ?><small><?php echo esc_html( $hint ); ?></small><?php endif; ?></span>
+							</label>
+							<?php
+						};
+						?>
+
+						<?php if ( $has_woo ) : ?>
+						<div class="yuniq-ai-check-group yq-check-wide">
+							<h3>دستیار چه جزئیاتی از هر محصول بداند؟</h3>
+							<div class="yq-check-grid">
+								<?php
+								$yq_check( 'wc_price', 'قیمت', '«قیمتش چنده؟» — شامل قیمت تخفیف‌خورده و بازه قیمت محصولات متغیر' );
+								$yq_check( 'wc_stock', 'موجودی', '«موجوده؟» — وضعیت موجودی و تعداد باقی‌مانده' );
+								$yq_check( 'wc_variations', 'متغیرها (تنوع‌ها)', '«چه رنگ‌هایی داری؟ ۲۵۶ گیگ چنده؟» — هر تنوع با قیمت و موجودی خودش' );
+								$yq_check( 'wc_attributes', 'ویژگی‌ها', '«جنسش چیه؟ چه سایزهایی داره؟» — رنگ، سایز، جنس، حافظه و…' );
+								$yq_check( 'wc_short_desc', 'توضیح کوتاه محصول', 'خلاصه‌ای که بالای صفحه محصول نوشته‌اید' );
+								$yq_check( 'wc_sku', 'شناسه محصول (SKU)', 'جست‌وجو با کد کالا' );
+								$yq_check( 'wc_dimensions', 'وزن و ابعاد', '«وزنش چقدره؟»' );
+								$yq_check( 'wc_reviews', 'نظرات و امتیاز خریداران', '«بقیه راضی بودن؟» — ۵ نظر تأییدشده آخر و میانگین امتیاز' );
+								?>
+							</div>
+							<h3 class="yq-check-sub">کدام محصولات را کنار بگذارد؟</h3>
+							<div class="yq-check-grid">
+								<?php
+								$yq_check( 'wc_skip_outofstock', 'محصولات ناموجود را ایندکس نکن', 'دستیار اصلاً درباره آن‌ها صحبت نمی‌کند' );
+								$yq_check( 'wc_skip_hidden', 'محصولات پنهان را ایندکس نکن', 'محصولاتی که «نمایش در کاتالوگ» آن‌ها روی «پنهان» است' );
+								?>
+							</div>
+						</div>
+						<?php endif; ?>
+
+						<div class="yuniq-ai-check-group yq-check-wide">
+							<h3>اطلاعات تکمیلی</h3>
+							<div class="yq-check-grid">
+								<?php
+								$yq_check( 'site_profile', 'نقشه کلی سایت', 'فهرست دسته‌بندی‌ها و برگه‌های اصلی همیشه در اختیار دستیار باشد: «چی می‌فروشید؟»' );
+								$yq_check( 'index_custom_fields', 'فیلدهای سفارشی', 'فیلدهای ACF و مشابه (فقط فیلدهای عمومی)' );
+								?>
+							</div>
+						</div>
+
+
 					<table class="form-table" style="margin-top:20px;">
 						<tr>
 							<th scope="row">شامل کردن URLها (اختیاری)</th>
@@ -503,6 +555,26 @@ $yq_design_defaults = array_intersect_key(
 					<p>
 						<a href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-knowledge' ) ); ?>" class="button button-primary">رفتن به پایگاه دانش و شروع ایندکس ←</a>
 					</p>
+				</div>
+			
+				<div class="yuniq-ai-card">
+					<h2>اطلاعات کسب‌وکار شما</h2>
+					<p class="description">هر چیزی که دستیار باید <strong>همیشه</strong> بداند، حتی اگر در هیچ صفحه‌ای از سایت نیامده باشد. با هر سوال برای دستیار فرستاده می‌شود و نیازی به ایندکس ندارد.</p>
+					<textarea name="yuniq_ai_settings[business_info]" rows="7" class="large-text" placeholder="تلفن: ۰۲۱-۱۲۳۴۵۶۷۸&#10;آدرس: تهران، ...&#10;ساعت کاری: شنبه تا پنجشنبه ۹ تا ۱۸&#10;ارسال: تهران یک‌روزه با پیک، شهرستان ۲ تا ۴ روز با پست. ارسال رایگان برای خرید بالای ۲ میلیون تومان.&#10;مرجوعی: تا ۷ روز در صورت باز نشدن بسته.&#10;پرداخت: درگاه آنلاین و پرداخت در محل (فقط تهران)."><?php echo esc_textarea( $s['business_info'] ); ?></textarea>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>دقت جست‌وجو در سایت</h2>
+					<div class="yq-field">
+						<span class="yq-label">از هر صفحه چقدر متن برای دستیار فرستاده شود؟</span>
+						<?php $yq_options( 'context_detail' ); ?>
+						<p class="yq-help">قیمت، موجودی، ویژگی‌ها و متغیرها همیشه کامل فرستاده می‌شوند؛ این گزینه فقط به متن توضیحات مربوط است.</p>
+					</div>
+					<div class="yq-field">
+						<label class="yq-label" for="yuniq-ai-synonyms">کلمه‌های هم‌معنی (اختیاری)</label>
+						<textarea name="yuniq_ai_settings[synonyms]" id="yuniq-ai-synonyms" rows="4" class="large-text" placeholder="کتونی = کفش ورزشی, sneaker&#10;هودی = سویشرت"><?php echo esc_textarea( $s['synonyms'] ); ?></textarea>
+						<p class="yq-help">هر خط یک گروه. اگر مشتری‌ها کلمه‌ای می‌گویند که در سایت به شکل دیگری نوشته شده، اینجا به هم وصلشان کنید. نام برندها و کلمه‌های رایج (آیفون = iPhone، سامسونگ = Samsung، گوشی = موبایل و…) از قبل شناخته می‌شوند.</p>
+					</div>
 				</div>
 			</div>
 

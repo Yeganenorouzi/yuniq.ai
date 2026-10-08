@@ -82,12 +82,12 @@ final class Repository {
 		$data['post_type']  = sanitize_key( $data['post_type'] );
 		$data['categories'] = $this->flatten_terms( $data['categories'] );
 		$data['tags']       = $this->flatten_terms( $data['tags'] );
-		$sku                = is_array( $data['metadata'] ) && ! empty( $data['metadata']['sku'] ) ? (string) $data['metadata']['sku'] : '';
-		$data['metadata']   = is_array( $data['metadata'] ) ? wp_json_encode( $data['metadata'] ) : (string) $data['metadata'];
+		$sku                = is_array( $data['metadata'] ) ? self::searchable_meta( $data['metadata'] ) : '';
+		$data['metadata']   = is_array( $data['metadata'] ) ? wp_json_encode( $data['metadata'], JSON_UNESCAPED_UNICODE ) : (string) $data['metadata'];
 
 		// The normalized copy is what every search actually matches against.
 		$data['search_text'] = Text::normalize(
-			$data['title'] . ' ' . $sku . ' ' . $data['categories'] . ' ' . $data['tags'] . ' ' . $data['excerpt'] . ' ' . $data['content']
+			$data['title'] . ' ' . $data['categories'] . ' ' . $data['tags'] . ' ' . $sku . ' ' . $data['excerpt'] . ' ' . $data['content']
 		);
 
 		// Stamped on every pass (not only on insert), so a finished crawl can
@@ -124,78 +124,99 @@ final class Repository {
 	}
 
 	/**
-	 * Find documents relevant to a query.
+	 * Find documents relevant to a question.
 	 *
-	 * FULLTEXT runs first because it is index-backed. The fallback is a
-	 * single OR'd LIKE over a capped set of tokens — deliberately one
-	 * query, since the per-token loop it replaces could trigger a full
-	 * table scan for every word in the question.
+	 * Every meaningful word is scored against each document: a hit in the
+	 * title area counts three times a hit in the body, and words from the
+	 * question itself count twice the words borrowed from the conversation
+	 * so far. That last part is what lets a follow-up such as «چه رنگ‌هایی
+	 * داری؟» still find the product the visitor was just talking about.
 	 *
-	 * @param string $query Search terms.
-	 * @param int    $limit Maximum rows.
+	 * MySQL FULLTEXT is not used for ranking: it ignores short tokens such
+	 * as "16", and it happily ranked documents on filler words.
+	 *
+	 * @param string $query    The visitor's question.
+	 * @param int    $limit    Maximum rows.
+	 * @param string $context  Earlier turns of the conversation, optional.
+	 * @param array  $synonyms Extra synonym groups from the settings.
 	 * @return array
 	 */
-	public function search( $query, $limit = 5 ) {
+	public function search( $query, $limit = 5, $context = '', array $synonyms = array() ) {
 		global $wpdb;
 
-		$normalized = Text::normalize( $query );
+		$weights = Text::weighted_tokens( $query, $context, $synonyms );
 
-		if ( '' === $normalized ) {
-			return array();
-		}
+		if ( ! $weights ) {
+			$normalized = Text::normalize( $query );
 
-		$columns = 'id, post_id, post_type, title, content, excerpt, url, slug, categories, tags, metadata';
+			if ( '' === $normalized ) {
+				return array();
+			}
 
-		$results = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-			$wpdb->prepare(
-				"SELECT {$columns},
-					MATCH(search_text) AGAINST(%s IN NATURAL LANGUAGE MODE) AS relevance
-				FROM {$this->table}
-				WHERE MATCH(search_text) AGAINST(%s IN NATURAL LANGUAGE MODE)
-				ORDER BY relevance DESC
-				LIMIT %d",
-				$normalized,
-				$normalized,
-				$limit
-			),
-			ARRAY_A
-		);
-
-		if ( ! empty( $results ) ) {
-			return $results;
-		}
-
-		$tokens = Text::tokens( $query, 4 );
-
-		if ( empty( $tokens ) ) {
 			// Nothing but stop words: match the phrase as typed.
-			$tokens = array( $normalized );
+			$weights = array( $normalized => 2 );
 		}
 
-		$clauses = array();
-		$values  = array();
+		$score  = array();
+		$where  = array();
+		$values = array();
+		$likes  = array();
 
-		foreach ( $tokens as $token ) {
-			$clauses[] = 'search_text LIKE %s';
-			$values[]  = '%' . $wpdb->esc_like( $token ) . '%';
+		foreach ( $weights as $token => $weight ) {
+			$like     = '%' . $wpdb->esc_like( $token ) . '%';
+			$score[]  = '(CASE WHEN LEFT(search_text, 220) LIKE %s THEN %d ELSE 0 END + CASE WHEN search_text LIKE %s THEN %d ELSE 0 END)';
+			$values[] = $like;
+			$values[] = 3 * (int) $weight;
+			$values[] = $like;
+			$values[] = (int) $weight;
+			$where[]  = 'search_text LIKE %s';
+			$likes[]  = $like;
 		}
 
-		$values[] = $limit;
-		$where    = implode( ' OR ', $clauses );
+		$values   = array_merge( $values, $likes );
+		$values[] = max( 1, (int) $limit ) * 2;
 
-		$results = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.NotPrepared
+		$ranked = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->prepare(
-				"SELECT {$columns}, 0 AS relevance
-				FROM {$this->table}
-				WHERE {$where}
-				ORDER BY id DESC
-				LIMIT %d",
+				'SELECT id, (' . implode( ' + ', $score ) . ") AS relevance FROM {$this->table} WHERE " . implode( ' OR ', $where ) . ' ORDER BY relevance DESC, id DESC LIMIT %d', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders are built above, one per value.
 				$values
 			),
 			ARRAY_A
 		);
 
-		return $results ? $results : array();
+		if ( empty( $ranked ) ) {
+			return array();
+		}
+
+		// Weak tail matches (one borrowed word somewhere in the body) only
+		// dilute the context, so anything far below the best hit is dropped.
+		$best = (int) $ranked[0]['relevance'];
+		$ids  = array();
+
+		foreach ( $ranked as $row ) {
+			if ( (int) $row['relevance'] * 3 >= $best && count( $ids ) < $limit ) {
+				$ids[] = (int) $row['id'];
+			}
+		}
+
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			"SELECT id, post_id, post_type, title, content, excerpt, url, slug, categories, tags, metadata FROM {$this->table} WHERE id IN (" . implode( ',', $ids ) . ')', // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- integer ids from the query above.
+			ARRAY_A
+		);
+
+		$by_id = array();
+		foreach ( (array) $rows as $row ) {
+			$by_id[ (int) $row['id'] ] = $row;
+		}
+
+		$results = array();
+		foreach ( $ids as $id ) {
+			if ( isset( $by_id[ $id ] ) ) {
+				$results[] = $by_id[ $id ];
+			}
+		}
+
+		return $results;
 	}
 
 	/**
@@ -204,38 +225,42 @@ final class Repository {
 	 * Results are cached per normalized question, so a repeated or common
 	 * question skips the database entirely.
 	 *
-	 * @param string $query User question.
-	 * @param int    $limit Maximum documents.
+	 * @param string $query    User question.
+	 * @param int    $limit    Maximum documents.
+	 * @param string $context  Earlier turns of the conversation, optional.
+	 * @param int    $chars    Characters of body text kept per document.
+	 * @param array  $synonyms Extra synonym groups from the settings.
 	 * @return string Empty when nothing matched.
 	 */
-	public function get_context_for_query( $query, $limit = 5 ) {
-		$normalized = Text::normalize( $query );
+	public function get_context_for_query( $query, $limit = 5, $context = '', $chars = self::CONTEXT_CHARS, array $synonyms = array() ) {
+		$normalized = Text::normalize( $query . ' | ' . $context );
 
-		if ( '' === $normalized ) {
+		if ( '' === trim( $normalized, ' |' ) ) {
 			return '';
 		}
 
-		$cache_key = 'yuniq_ai_ctx_' . md5( $this->cache_version() . '|' . $limit . '|' . $normalized );
+		$cache_key = 'yuniq_ai_ctx_' . md5( $this->cache_version() . '|' . $limit . '|' . $chars . '|' . wp_json_encode( $synonyms ) . '|' . $normalized );
 		$cached    = get_transient( $cache_key );
 
 		if ( is_string( $cached ) ) {
 			return $cached;
 		}
 
-		$context = $this->build_context( $this->search( $query, $limit ) );
+		$built = $this->build_context( $this->search( $query, $limit, $context, $synonyms ), max( 200, (int) $chars ) );
 
-		set_transient( $cache_key, $context, self::CACHE_TTL );
+		set_transient( $cache_key, $built, self::CACHE_TTL );
 
-		return $context;
+		return $built;
 	}
 
 	/**
 	 * Render search results into the block the model reads.
 	 *
 	 * @param array $results Rows from {@see self::search()}.
+	 * @param int   $chars   Characters of body text kept per document.
 	 * @return string
 	 */
-	private function build_context( array $results ) {
+	private function build_context( array $results, $chars = self::CONTEXT_CHARS ) {
 		if ( empty( $results ) ) {
 			return '';
 		}
@@ -244,6 +269,8 @@ final class Repository {
 		$index = 1;
 
 		foreach ( $results as $item ) {
+			$is_product = isset( $item['post_type'] ) && 'product' === $item['post_type'];
+
 			$part  = "[Document {$index}]\n";
 			$part .= 'Title: ' . ( isset( $item['title'] ) ? $item['title'] : '' ) . "\n";
 			$part .= 'Type: ' . ( isset( $item['post_type'] ) ? $item['post_type'] : '' ) . "\n";
@@ -251,7 +278,7 @@ final class Repository {
 
 			// Only products are ever referenced by [[PRODUCT:ID]], so the id
 			// is surfaced just for them rather than cluttering every result.
-			if ( isset( $item['post_type'] ) && 'product' === $item['post_type'] && ! empty( $item['post_id'] ) ) {
+			if ( $is_product && ! empty( $item['post_id'] ) ) {
 				$part .= 'Product ID: ' . (int) $item['post_id'] . "\n";
 			}
 
@@ -259,11 +286,17 @@ final class Repository {
 				$part .= 'Categories: ' . $item['categories'] . "\n";
 			}
 
-			$part .= $this->product_facts( $item );
+			// Facts first: they are short, exact, and must never be the part
+			// that truncation cuts off.
+			$part .= $this->facts( $item );
+
+			if ( $is_product && ! empty( $item['excerpt'] ) ) {
+				$part .= 'Summary: ' . Text::truncate( $item['excerpt'], 400 ) . "\n";
+			}
 
 			$content = wp_strip_all_tags( isset( $item['content'] ) ? $item['content'] : '' );
 
-			$part   .= 'Content: ' . Text::truncate( $content, self::CONTEXT_CHARS ) . "\n";
+			$part   .= 'Content: ' . Text::truncate( $content, $chars ) . "\n";
 			$parts[] = $part;
 			$index++;
 		}
@@ -272,54 +305,187 @@ final class Repository {
 	}
 
 	/**
-	 * Price, stock and SKU lines for a product document.
-	 *
-	 * Without these the model only ever saw the product description, so it
-	 * could not answer the most common shop question: "how much is it?".
+	 * The structured facts stored with a document: price, stock, SKU,
+	 * attributes, variations, dimensions, reviews and custom fields —
+	 * whichever of them the crawler settings chose to index.
 	 *
 	 * @param array $item Knowledge base row.
-	 * @return string Empty for anything that is not a product.
+	 * @return string
 	 */
-	private function product_facts( array $item ) {
-		if ( ! isset( $item['post_type'] ) || 'product' !== $item['post_type'] || empty( $item['metadata'] ) ) {
-			return '';
-		}
-
-		$meta = json_decode( (string) $item['metadata'], true );
+	private function facts( array $item ) {
+		$meta = empty( $item['metadata'] ) ? null : json_decode( (string) $item['metadata'], true );
 
 		if ( ! is_array( $meta ) ) {
 			return '';
 		}
 
-		$facts = '';
-		$price = self::format_price( isset( $meta['price'] ) ? $meta['price'] : '' );
-		$sale  = isset( $meta['sale_price'] ) ? (string) $meta['sale_price'] : '';
-		$full  = isset( $meta['regular_price'] ) ? (string) $meta['regular_price'] : '';
+		$stock_labels = array(
+			'instock'     => 'in stock',
+			'outofstock'  => 'out of stock',
+			'onbackorder' => 'available on backorder',
+		);
+		$show_stock   = ! isset( $meta['show_stock'] ) || $meta['show_stock'];
+		$facts        = '';
 
-		if ( '' !== $price ) {
-			$facts .= 'Price: ' . $price;
+		if ( ! empty( $meta['price_min'] ) && ! empty( $meta['price_max'] ) && (string) $meta['price_min'] !== (string) $meta['price_max'] ) {
+			$facts .= 'Price: from ' . self::format_price( $meta['price_min'] ) . ' to ' . self::format_price( $meta['price_max'] ) . " (depends on the variation)\n";
+		} else {
+			$price = self::format_price( isset( $meta['price'] ) ? $meta['price'] : '' );
+			$sale  = isset( $meta['sale_price'] ) ? (string) $meta['sale_price'] : '';
+			$full  = isset( $meta['regular_price'] ) ? (string) $meta['regular_price'] : '';
 
-			if ( '' !== $sale && '' !== $full && $sale !== $full ) {
-				$facts .= ' (on sale, was ' . self::format_price( $full ) . ')';
+			if ( '' !== $price ) {
+				$facts .= 'Price: ' . $price . ( '' !== $sale && '' !== $full && $sale !== $full ? ' (on sale, was ' . self::format_price( $full ) . ')' : '' ) . "\n";
 			}
-
-			$facts .= "\n";
 		}
 
-		if ( ! empty( $meta['stock_status'] ) ) {
-			$stock  = array(
-				'instock'     => 'in stock',
-				'outofstock'  => 'out of stock',
-				'onbackorder' => 'available on backorder',
-			);
-			$facts .= 'Stock: ' . ( isset( $stock[ $meta['stock_status'] ] ) ? $stock[ $meta['stock_status'] ] : $meta['stock_status'] ) . "\n";
+		if ( $show_stock && ! empty( $meta['stock_status'] ) ) {
+			$facts .= 'Stock: ' . ( isset( $stock_labels[ $meta['stock_status'] ] ) ? $stock_labels[ $meta['stock_status'] ] : $meta['stock_status'] )
+				. ( isset( $meta['stock_qty'] ) ? ' (' . (int) $meta['stock_qty'] . ' left)' : '' ) . "\n";
 		}
 
 		if ( ! empty( $meta['sku'] ) ) {
 			$facts .= 'SKU: ' . $meta['sku'] . "\n";
 		}
 
+		foreach ( array( 'weight' => 'Weight', 'dimensions' => 'Dimensions', 'rating' => 'Customer rating' ) as $key => $label ) {
+			if ( ! empty( $meta[ $key ] ) ) {
+				$facts .= $label . ': ' . $meta[ $key ] . "\n";
+			}
+		}
+
+		if ( ! empty( $meta['attributes'] ) && is_array( $meta['attributes'] ) ) {
+			$facts .= "Attributes (all available options):\n";
+			foreach ( $meta['attributes'] as $name => $values ) {
+				$facts .= '- ' . $name . ': ' . $values . "\n";
+			}
+		}
+
+		if ( ! empty( $meta['variations'] ) && is_array( $meta['variations'] ) ) {
+			$facts .= "Variations (each is a separately purchasable option):\n";
+			foreach ( $meta['variations'] as $variation ) {
+				$line = '- ' . ( isset( $variation['label'] ) ? $variation['label'] : '' );
+
+				if ( ! empty( $variation['price'] ) ) {
+					$line .= ' | ' . self::format_price( $variation['price'] );
+				}
+				if ( ! empty( $variation['stock'] ) ) {
+					$line .= ' | ' . ( isset( $stock_labels[ $variation['stock'] ] ) ? $stock_labels[ $variation['stock'] ] : $variation['stock'] );
+				}
+				if ( ! empty( $variation['sku'] ) ) {
+					$line .= ' | SKU ' . $variation['sku'];
+				}
+
+				$facts .= $line . "\n";
+			}
+		}
+
+		if ( ! empty( $meta['fields'] ) && is_array( $meta['fields'] ) ) {
+			$facts .= "Extra fields:\n";
+			foreach ( $meta['fields'] as $name => $value ) {
+				$facts .= '- ' . $name . ': ' . $value . "\n";
+			}
+		}
+
+		if ( ! empty( $meta['reviews'] ) && is_array( $meta['reviews'] ) ) {
+			$facts .= "Customer reviews:\n";
+			foreach ( $meta['reviews'] as $review ) {
+				$facts .= '- ' . $review . "\n";
+			}
+		}
+
 		return $facts;
+	}
+
+	/**
+	 * A short map of the whole site: how much of each kind of content is
+	 * indexed, the shop's categories and the main pages.
+	 *
+	 * Sent with every question, so the assistant can answer "what do you
+	 * sell?" or point to the right section even when the search for that
+	 * particular wording found nothing.
+	 *
+	 * @return string
+	 */
+	public function site_overview() {
+		global $wpdb;
+
+		$cache_key = 'yuniq_ai_ovw_' . $this->cache_version();
+		$cached    = get_transient( $cache_key );
+
+		if ( is_string( $cached ) ) {
+			return $cached;
+		}
+
+		$labels   = array(
+			'product' => 'products',
+			'post'    => 'articles',
+			'page'    => 'pages',
+		);
+		$counts   = $this->get_counts_by_type();
+		$overview = '';
+		$summary  = array();
+
+		foreach ( $labels as $type => $label ) {
+			if ( ! empty( $counts[ $type ] ) ) {
+				$summary[] = (int) $counts[ $type ] . ' ' . $label;
+			}
+		}
+
+		if ( $summary ) {
+			$overview .= 'Indexed content: ' . implode( ', ', $summary ) . ".\n";
+		}
+
+		$lists = array(
+			'tax_product_cat' => array( 'Product categories', 40 ),
+			'tax_category'    => array( 'Article categories', 20 ),
+			'page'            => array( 'Main pages', 25 ),
+		);
+
+		foreach ( $lists as $type => $list ) {
+			$titles = $wpdb->get_col( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->prepare( "SELECT title FROM {$this->table} WHERE post_type = %s ORDER BY id ASC LIMIT %d", $type, $list[1] ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			);
+
+			if ( $titles ) {
+				$overview .= $list[0] . ': ' . implode( '، ', array_map( 'wp_strip_all_tags', $titles ) ) . "\n";
+			}
+		}
+
+		set_transient( $cache_key, $overview, DAY_IN_SECONDS );
+
+		return $overview;
+	}
+
+	/**
+	 * The words in a document's structured facts that a visitor might
+	 * search by: SKU, attribute values and variation names.
+	 *
+	 * @param array $meta Document metadata.
+	 * @return string
+	 */
+	private static function searchable_meta( array $meta ) {
+		$words = array();
+
+		if ( ! empty( $meta['sku'] ) ) {
+			$words[] = $meta['sku'];
+		}
+
+		foreach ( array( 'attributes', 'fields' ) as $group ) {
+			if ( ! empty( $meta[ $group ] ) && is_array( $meta[ $group ] ) ) {
+				foreach ( $meta[ $group ] as $name => $value ) {
+					$words[] = $name . ' ' . $value;
+				}
+			}
+		}
+
+		if ( ! empty( $meta['variations'] ) && is_array( $meta['variations'] ) ) {
+			foreach ( $meta['variations'] as $variation ) {
+				$words[] = ( isset( $variation['label'] ) ? $variation['label'] : '' ) . ' ' . ( isset( $variation['sku'] ) ? $variation['sku'] : '' );
+			}
+		}
+
+		return Text::truncate( implode( ' ', array_map( 'strval', $words ) ), 3000, '' );
 	}
 
 	/**

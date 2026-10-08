@@ -2112,3 +2112,32 @@
 	.yuniq-ai-admin-wrap .yuniq-ai-header { padding: 18px; border-radius: 14px; }
 	.yuniq-ai-admin-wrap .yuniq-ai-card { padding: 18px 16px; }
 }
+
+/* =========================================================
+   1.5 — detailed crawler choices
+   ========================================================= */
+.yq-check-wide { margin-top: 14px; }
+.yq-check-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 8px;
+}
+.yuniq-ai-check-group .yq-check-row {
+	align-items: flex-start;
+	gap: 10px;
+	margin: 0;
+	padding: 10px 12px;
+	border: 1px solid var(--yq-border);
+	border-radius: 10px;
+	background: var(--yq-surface);
+	transition: border-color 0.15s, background 0.15s;
+}
+.yuniq-ai-check-group .yq-check-row:hover { border-color: #b9c1d3; }
+.yuniq-ai-check-group .yq-check-row:has(input:checked) {
+	border-color: var(--yq-primary);
+	background: var(--yq-primary-soft);
+}
+.yq-check-row input { margin-top: 3px; flex-shrink: 0; }
+.yq-check-row strong { display: block; font-size: 13px; font-weight: 600; }
+.yq-check-row small { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.7; color: var(--yq-text-muted); }
+.yuniq-ai-check-group h3.yq-check-sub { margin-top: 16px; }

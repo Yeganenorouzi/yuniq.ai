@@ -195,6 +195,7 @@ final class ChatController implements HookableInterface {
 				'tokens'      => isset( $response['tokens'] ) ? $response['tokens'] : 0,
 				'needs_human' => ! empty( $response['needs_human'] ),
 				'product'     => isset( $response['product'] ) ? $response['product'] : null,
+				'products'    => isset( $response['products'] ) ? $response['products'] : array(),
 				'form_key'    => isset( $response['form_key'] ) ? $response['form_key'] : null,
 				'options'     => isset( $response['options'] ) ? $response['options'] : array(),
 			),
@@ -251,8 +252,8 @@ final class ChatController implements HookableInterface {
 				)
 			);
 		} else {
-			if ( ! empty( $response['product'] ) ) {
-				$this->send_event( array( 'type' => 'product_card', 'product' => $response['product'] ) );
+			foreach ( isset( $response['products'] ) ? (array) $response['products'] : array() as $product ) {
+				$this->send_event( array( 'type' => 'product_card', 'product' => $product ) );
 			}
 
 			if ( ! empty( $response['form_key'] ) ) {

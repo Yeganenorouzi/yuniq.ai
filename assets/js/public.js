@@ -399,7 +399,9 @@
 			var label = String(a.label || '').trim();
 			if (!label) return;
 
-			var link = String(a.link || '').trim();
+			var action = String(a.action || '');
+			if (action === 'human' && !liveSupport.enabled) return;
+			var link = action ? '' : String(a.link || '').trim();
 			// Only ordinary web addresses: never javascript:, data: and the like.
 			if (link && !/^(https?:\/\/|\/(?!\/)|#|\?)/i.test(link)) link = '';
 			var desc = String(a.desc || '').trim();
@@ -415,7 +417,9 @@
 			} else {
 				card.type = 'button';
 				card.addEventListener('click', function () {
-					sendMessage(String(a.prompt || label).trim());
+					if (action === 'human') escalate();
+					else if (action === 'form') renderForm(String(a.form_key || ''));
+					else sendMessage(String(a.prompt || label).trim());
 				});
 			}
 
@@ -1199,7 +1203,8 @@
 					appendMessage('assistant', data.content);
 					history.push({ role: 'assistant', content: data.content });
 					remember('assistant', data.content);
-					if (data.product) renderProductCard(data.product);
+					var cards = Array.isArray(data.products) && data.products.length ? data.products : (data.product ? [data.product] : []);
+					cards.forEach(renderProductCard);
 					if (data.form_key) renderForm(data.form_key);
 					if (data.needs_human) renderNeedHumanCta();
 					else renderOptions(data.options);

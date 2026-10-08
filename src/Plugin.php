@@ -275,7 +275,7 @@ final class Plugin {
 		$this->container->set(
 			Widget::class,
 			function ( Container $c ) {
-				return new Widget( $c->get( Settings::class ), $c->get( Client::class ) );
+				return new Widget( $c->get( Settings::class ), $c->get( Client::class ), $c->get( KnowledgeBase::class ) );
 			}
 		);
 

@@ -49,6 +49,11 @@ final class Client {
 	const MAX_OPTIONS = 4;
 
 	/**
+	 * Most product cards shown under one reply.
+	 */
+	const MAX_PRODUCTS = 3;
+
+	/**
 	 * Plugin settings.
 	 *
 	 * @var Settings
@@ -94,7 +99,7 @@ final class Client {
 		);
 		$result['provider'] = $this->provider()->get_id();
 
-		$this->resolve_directives( $result );
+		$this->resolve_directives( $result, $user_message );
 		$this->report( $result );
 
 		return $result;
@@ -165,7 +170,7 @@ final class Client {
 
 		$result['provider'] = $provider->get_id();
 
-		$this->resolve_directives( $result );
+		$this->resolve_directives( $result, $user_message );
 		$this->report( $result );
 
 		return $result;
@@ -333,12 +338,10 @@ final class Client {
 			. '5) ' . $this->style_rule() . "\n"
 			. "6) If knowledge base has no match, say so briefly and still try to help. Never invent prices, stock, colours, variations or policies that are not in the knowledge base. When a product lists Attributes or Variations, those lists are the complete set of available options: answer questions about colours, sizes, storage and the like from them.\n"
 			. "7) HANDOFF: if you genuinely cannot help (the knowledge base has nothing relevant and the question needs a human, or the visitor is frustrated/asks for a human), write your best short reply and then add a new line containing exactly [[NEED_HUMAN]] and nothing else on that line. Never mention this token to the user, never explain it — it is stripped before they see your message.\n"
-			. "8) PRODUCT CARD: when you recommend one specific product from the knowledge base, add a new line at the end containing exactly [[PRODUCT:ID]] (replace ID with the numeric id shown for that product below). Only ever include one per reply, and only when a specific product is clearly the right recommendation.\n"
+			. "8) PRODUCT CARD: when your reply recommends or lists specific products from the knowledge base, add one line per product at the very end containing exactly [[PRODUCT:ID]] (ID is the numeric Product ID shown for it below). Up to 3 products, most relevant first. The visitor then sees each as a card with its photo, price and buy button, so do not repeat links for them.\n"
 			. "9) LEAD FORM: if one of the \"Available forms\" listed below clearly matches what the visitor wants (e.g. they ask for a consultation/quote/callback), add a new line at the end containing exactly [[FORM:key]] (replace key with that form's key). Only ever include one per reply.\n";
 
-		if ( $this->settings->get( 'suggest_options', true ) ) {
-			$prompt .= '10) FOLLOW-UP OPTIONS: when it genuinely helps the visitor choose a next step (picking between products/services, or an obvious next question), add a final line containing exactly [[OPTIONS:first|second|third]] with 2 to ' . self::MAX_OPTIONS . " short choices (max 5 words each, in the visitor's language, written as the visitor would say them). Skip it when no natural choices exist. Never mention this token.\n";
-		}
+		$prompt .= $this->options_rule();
 
 		$prompt .= $this->build_forms_hint();
 
@@ -372,6 +375,63 @@ final class Client {
 		 * @param string $context      Retrieved knowledge base context.
 		 */
 		return (string) apply_filters( 'yuniq_ai_system_prompt', $prompt, $user_message, $context );
+	}
+
+	/**
+	 * How (and whether) the model offers tappable next steps under a reply.
+	 *
+	 * Vague chips ("more info", "another question") are worse than none:
+	 * they cost a tap and lead nowhere. The rule therefore ties every
+	 * option to something that is actually in the knowledge base.
+	 *
+	 * @return string
+	 */
+	private function options_rule() {
+		$mode = (string) $this->settings->get( 'suggest_mode', 'smart' );
+
+		if ( 'off' === $mode || ! $this->settings->get( 'suggest_options', true ) ) {
+			return '';
+		}
+
+		$rule = '10) NEXT-STEP OPTIONS: you may end with one final line containing exactly [[OPTIONS:first|second|third]] (2 or 3 options, max ' . self::MAX_OPTIONS . "). They are buttons the visitor taps instead of typing, so each one must be:\n"
+			. "   - written as the visitor's own next message, in their language, at most 5 words;\n"
+			. "   - SPECIFIC and taken from the knowledge base documents above: real product names, real variations (a colour, a size, a storage capacity), real categories or services. Good: «رنگ مشکی موجوده؟», «مدل ۲۵۶ گیگ چنده؟», «iPhone 16 Pro Max», «هزینه ارسال به شهرستان». Bad: «اطلاعات بیشتر», «سوال دیگری دارم», «بله», «ممنون», «ادامه بده», «راهنمایی»;\n"
+			. "   - answerable from the knowledge base or the About section, never something you would have to refuse;\n"
+			. "   - different from what the visitor just asked and from what you just answered.\n";
+
+		if ( 'choices' === $mode ) {
+			$rule .= "   Offer them ONLY when the visitor has to pick between concrete alternatives you just listed (products, variations, categories, plans). In every other case add no OPTIONS line.\n";
+		} else {
+			$rule .= "   Prefer, in this order: (a) the concrete alternatives you just listed, so the visitor can pick one; (b) the natural next detail about the product or service under discussion (its variations, price, stock, delivery, warranty) if the knowledge base has it. If you cannot think of at least two options that meet every rule, add no OPTIONS line at all.\n";
+		}
+
+		return $rule . "   Never mention this token.\n";
+	}
+
+	/**
+	 * Drop the options that would waste the visitor's tap: filler, a
+	 * repeat of their own question, or anything too long for a button.
+	 *
+	 * @param string[] $options      Options parsed from the reply.
+	 * @param string   $user_message What the visitor just asked.
+	 * @return string[] Empty unless at least two useful options remain.
+	 */
+	private function useful_options( array $options, $user_message ) {
+		$asked  = Text::normalize( $user_message );
+		$filler = '/^(اطلاعات|توضیح(ات)?|جزییات|راهنمایی|سوال|پرسش)( ی)? ?(بیشتر|دیگر|دیگری|دیگه)?( دارم| بده| میخوام| میخواهم| بدهید)?$|^(بله|اره|خیر|نه|ممنون|مرسی|تشکر|باشه|اوکی|ادامه( بده)?|بیشتر( بگو)?|سوال دیگر(ی)?( دارم)?|کمک( میخوام)?|شروع|بعدی|more( info(rmation)?)?|yes|no|ok(ay)?|thanks?|continue|next|help|tell me more|other questions?)$/u';
+		$kept   = array();
+
+		foreach ( $options as $option ) {
+			$normalized = trim( Text::normalize( $option ), " ?!.\t" );
+
+			if ( Text::length( $normalized ) < 2 || Text::length( $option ) > 45 || $normalized === trim( $asked, ' ?!.' ) || preg_match( $filler, $normalized ) ) {
+				continue;
+			}
+
+			$kept[ $normalized ] = $option;
+		}
+
+		return count( $kept ) >= 2 ? array_values( $kept ) : array();
 	}
 
 	/**
@@ -518,7 +578,7 @@ final class Client {
 	 * @param array $result Provider result, mutated in place.
 	 * @return void
 	 */
-	private function resolve_directives( array &$result ) {
+	private function resolve_directives( array &$result, $user_message = '' ) {
 		$content = isset( $result['content'] ) ? $result['content'] : '';
 		$flags   = $this->extract_directives( $content );
 
@@ -528,8 +588,20 @@ final class Client {
 
 		$result['needs_human'] = empty( $result['success'] ) ? true : $flags['needs_human'];
 		$result['form_key']    = $flags['form_key'];
-		$result['options']     = $flags['options'];
-		$result['product']     = $flags['product_id'] ? $this->build_product_payload( $flags['product_id'] ) : null;
+		$result['options']     = $this->useful_options( $flags['options'], $user_message );
+
+		$products = array();
+		foreach ( array_slice( $flags['product_ids'], 0, self::MAX_PRODUCTS ) as $product_id ) {
+			$payload = $this->build_product_payload( $product_id );
+
+			if ( $payload ) {
+				$products[] = $payload;
+			}
+		}
+
+		$result['products'] = $products;
+		// Kept for anything still reading the single-product field.
+		$result['product']  = $products ? $products[0] : null;
 	}
 
 	/**
@@ -537,12 +609,12 @@ final class Client {
 	 * `[[FORM:key]]` and `[[OPTIONS:a|b]]` directive in a piece of text.
 	 *
 	 * @param string $content Text to scan, mutated in place with directives removed.
-	 * @return array{needs_human:bool, product_id:int|null, form_key:string|null, options:string[]}
+	 * @return array{needs_human:bool, product_ids:int[], form_key:string|null, options:string[]}
 	 */
 	private function extract_directives( &$content ) {
 		$flags = array(
 			'needs_human' => false,
-			'product_id'  => null,
+			'product_ids' => array(),
 			'form_key'    => null,
 			'options'     => array(),
 		);
@@ -551,7 +623,9 @@ final class Client {
 			'/\n?\[\[(NEED_HUMAN|PRODUCT:(\d+)|FORM:([a-z0-9_-]+)|OPTIONS:([^\[\]]+))\]\]/iu',
 			function ( $m ) use ( &$flags ) {
 				if ( 0 === stripos( $m[1], 'PRODUCT:' ) ) {
-					$flags['product_id'] = isset( $m[2] ) ? (int) $m[2] : null;
+					if ( isset( $m[2] ) && ! in_array( (int) $m[2], $flags['product_ids'], true ) ) {
+						$flags['product_ids'][] = (int) $m[2];
+					}
 				} elseif ( 0 === stripos( $m[1], 'FORM:' ) ) {
 					$flags['form_key'] = isset( $m[3] ) ? $m[3] : null;
 				} elseif ( 0 === stripos( $m[1], 'OPTIONS:' ) ) {

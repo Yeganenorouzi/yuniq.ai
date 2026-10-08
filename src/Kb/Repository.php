@@ -398,6 +398,61 @@ final class Repository {
 	}
 
 	/**
+	 * The most populated indexed terms of one taxonomy.
+	 *
+	 * @param string $post_type Stored type, e.g. `tax_product_cat`.
+	 * @param int    $limit     How many to return.
+	 * @return array<int,array{title:string,count:int,url:string}>
+	 */
+	public function top_terms( $post_type, $limit = 3 ) {
+		global $wpdb;
+
+		$cache_key = 'yuniq_ai_top_' . md5( $this->cache_version() . '|' . $post_type . '|' . $limit );
+		$cached    = get_transient( $cache_key );
+
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare( "SELECT title, slug, url, metadata FROM {$this->table} WHERE post_type = %s LIMIT 300", $post_type ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			ARRAY_A
+		);
+
+		$terms = array();
+
+		foreach ( (array) $rows as $row ) {
+			$meta  = json_decode( (string) $row['metadata'], true );
+			$count = is_array( $meta ) && isset( $meta['count'] ) ? (int) $meta['count'] : 0;
+
+			// Empty categories and WordPress's catch-all one are not a
+			// useful thing to offer a visitor.
+			if ( $count < 1 || in_array( $row['slug'], array( 'uncategorized', 'bdon-dsth-bndy' ), true ) || false !== strpos( $row['title'], 'دسته‌بندی نشده' ) || false !== strpos( $row['title'], 'بدون دسته' ) ) {
+				continue;
+			}
+
+			$terms[] = array(
+				'title' => wp_strip_all_tags( $row['title'] ),
+				'count' => $count,
+				'url'   => $row['url'],
+			);
+		}
+
+		usort(
+			$terms,
+			function ( $a, $b ) {
+				return $b['count'] - $a['count'];
+			}
+		);
+
+		$terms = array_slice( $terms, 0, max( 1, (int) $limit ) );
+
+		set_transient( $cache_key, $terms, DAY_IN_SECONDS );
+
+		return $terms;
+	}
+
+	/**
 	 * A short map of the whole site: how much of each kind of content is
 	 * indexed, the shop's categories and the main pages.
 	 *

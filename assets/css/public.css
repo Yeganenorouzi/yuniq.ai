@@ -1408,3 +1408,17 @@
 		grid-template-columns: 1fr;
 	}
 }
+
+/* The widget is right-to-left: "send" travels toward the left, so the
+   paper plane is mirrored to point the way the message goes. */
+#yuniq-ai-root #yuniq-ai-send svg {
+	transform: scaleX(-1);
+}
+
+/* The field follows the language being typed (dir="auto"), which makes an
+   empty field left-to-right and put the placeholder's «...» on the wrong
+   side. While only the placeholder shows, it is laid out right-to-left. */
+#yuniq-ai-root #yuniq-ai-input:placeholder-shown {
+	direction: rtl;
+	text-align: right;
+}

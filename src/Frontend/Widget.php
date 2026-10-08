@@ -10,6 +10,7 @@ namespace Yuniq\Ai\Frontend;
 
 use Yuniq\Ai\Ai\Client;
 use Yuniq\Ai\Contracts\HookableInterface;
+use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\Rest\ChatController;
 use Yuniq\Ai\Settings;
 use Yuniq\Ai\Support\Assets;
@@ -43,6 +44,13 @@ final class Widget implements HookableInterface {
 	private $client;
 
 	/**
+	 * Knowledge base, the source of the automatic starter options.
+	 *
+	 * @var KnowledgeBase
+	 */
+	private $knowledge_base;
+
+	/**
 	 * Whether the `[yuniq_ai_page]` shortcode already printed the widget
 	 * markup earlier in this request, so the floating footer copy can skip
 	 * itself — otherwise the page would end up with two elements sharing
@@ -57,9 +65,11 @@ final class Widget implements HookableInterface {
 	 *
 	 * @param Settings $settings Plugin settings.
 	 * @param Client   $client   AI client.
+	 * @param KnowledgeBase $knowledge_base Knowledge base storage.
 	 */
-	public function __construct( Settings $settings, Client $client ) {
-		$this->settings = $settings;
+	public function __construct( Settings $settings, Client $client, KnowledgeBase $knowledge_base ) {
+		$this->knowledge_base = $knowledge_base;
+		$this->settings       = $settings;
 		$this->client   = $client;
 	}
 
@@ -261,25 +271,128 @@ final class Widget implements HookableInterface {
 	}
 
 	/**
-	 * Quick action cards with unlabeled rows removed. Each card carries a
-	 * label, an optional description, and either a prompt or a link.
+	 * The options a visitor sees before typing anything.
+	 *
+	 * In `auto` mode they are built from the site itself — its real
+	 * product categories, the owner's shipping/contact details, order
+	 * tracking, the human-support and lead-form actions — instead of a
+	 * fixed list of generic questions that fits no shop in particular.
+	 * Each card carries a label, an optional description, and one of: a
+	 * prompt to ask, a link to open, or an action to run.
 	 *
 	 * @return array
 	 */
 	private function quick_actions() {
-		$actions = (array) $this->settings->get( 'quick_actions', array() );
+		$mode = (string) $this->settings->get( 'starter_mode', 'auto' );
 
-		$actions = array_values(
+		if ( 'off' === $mode ) {
+			return array();
+		}
+
+		if ( 'auto' === $mode ) {
+			$auto = $this->auto_actions();
+
+			// Nothing indexed yet: the owner's own list is better than nothing.
+			if ( count( $auto ) >= 2 ) {
+				return $auto;
+			}
+		}
+
+		return array_values(
 			array_filter(
-				$actions,
+				(array) $this->settings->get( 'quick_actions', array() ),
 				function ( $action ) {
 					return is_array( $action ) && ! empty( $action['label'] );
 				}
 			)
 		);
+	}
 
-		// An empty list is a real choice: the admin removed every card.
-		return $actions;
+	/**
+	 * Starter options derived from the indexed site and the settings.
+	 *
+	 * @return array
+	 */
+	private function auto_actions() {
+		$actions = array();
+
+		// What the site is actually about: its biggest categories.
+		$is_shop = class_exists( 'WooCommerce' );
+		$terms   = $is_shop ? $this->knowledge_base->top_terms( 'tax_product_cat', 3 ) : array();
+
+		foreach ( $terms as $term ) {
+			$actions[] = array(
+				'label'  => $term['title'],
+				'desc'   => $term['count']
+					/* translators: %s: number of products. */
+					? sprintf( __( '%s محصول', 'yuniq-ai' ), number_format_i18n( $term['count'] ) )
+					: __( 'مشاهده محصولات', 'yuniq-ai' ),
+				/* translators: %s: category name. */
+				'prompt' => sprintf( __( 'چه محصولاتی در دسته «%s» دارید؟', 'yuniq-ai' ), $term['title'] ),
+			);
+		}
+
+		if ( ! $terms ) {
+			foreach ( $this->knowledge_base->top_terms( 'tax_category', 2 ) as $term ) {
+				$actions[] = array(
+					'label'  => $term['title'],
+					'desc'   => __( 'مطالب این موضوع', 'yuniq-ai' ),
+					/* translators: %s: category name. */
+					'prompt' => sprintf( __( 'درباره «%s» چه مطالبی دارید؟', 'yuniq-ai' ), $term['title'] ),
+				);
+			}
+		}
+
+		// What the owner told the assistant about the business.
+		$info = (string) $this->settings->get( 'business_info', '' );
+
+		if ( preg_match( '/ارسال|پست|پیک|تحویل|مرجوع/u', $info ) ) {
+			$actions[] = array(
+				'label'  => __( 'ارسال و مرجوعی', 'yuniq-ai' ),
+				'desc'   => __( 'هزینه، زمان و شرایط', 'yuniq-ai' ),
+				'prompt' => __( 'هزینه و زمان ارسال و شرایط مرجوعی چطور است؟', 'yuniq-ai' ),
+			);
+		}
+
+		if ( $is_shop && function_exists( 'wc_get_account_endpoint_url' ) ) {
+			$actions[] = array(
+				'label' => __( 'پیگیری سفارش', 'yuniq-ai' ),
+				'desc'  => __( 'وضعیت سفارش‌های من', 'yuniq-ai' ),
+				'link'  => wc_get_account_endpoint_url( 'orders' ),
+			);
+		}
+
+		foreach ( array_slice( (array) $this->settings->get( 'lead_forms', array() ), 0, 1 ) as $form ) {
+			if ( ! empty( $form['key'] ) && ! empty( $form['trigger_label'] ) ) {
+				$actions[] = array(
+					'label'    => $form['trigger_label'],
+					'desc'     => __( 'با شما تماس می‌گیریم', 'yuniq-ai' ),
+					'action'   => 'form',
+					'form_key' => $form['key'],
+				);
+			}
+		}
+
+		if ( $this->settings->get( 'live_support_enabled' ) && 'auto_suggest' !== $this->settings->get( 'live_support_mode' ) ) {
+			$actions[] = array(
+				'label'  => __( 'صحبت با کارشناس', 'yuniq-ai' ),
+				'desc'   => __( 'پاسخ از یک نفر واقعی', 'yuniq-ai' ),
+				'action' => 'human',
+			);
+		} elseif ( preg_match( '/تلفن|تماس|ساعت|آدرس|نشانی/u', $info ) ) {
+			$actions[] = array(
+				'label'  => __( 'تماس و ساعت کاری', 'yuniq-ai' ),
+				'desc'   => __( 'تلفن، آدرس، ساعت پاسخ‌گویی', 'yuniq-ai' ),
+				'prompt' => __( 'راه‌های تماس و ساعت کاری شما چیست؟', 'yuniq-ai' ),
+			);
+		}
+
+		/**
+		 * Filters the automatically generated starter options.
+		 *
+		 * @param array $actions Cards: label, desc, and prompt, link or action.
+		 */
+		return array_slice( (array) apply_filters( 'yuniq_ai_auto_starters', $actions ), 0, 6 );
 	}
 
 	/**

@@ -2141,3 +2141,4 @@
 .yq-check-row strong { display: block; font-size: 13px; font-weight: 600; }
 .yq-check-row small { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.7; color: var(--yq-text-muted); }
 .yuniq-ai-check-group h3.yq-check-sub { margin-top: 16px; }
+.yuniq-ai-admin-wrap h3.yq-sub { margin: 20px 0 4px; font-size: 13.5px; font-weight: 600; }

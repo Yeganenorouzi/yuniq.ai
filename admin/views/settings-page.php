@@ -218,7 +218,11 @@ $yq_design_defaults = array_intersect_key(
 				</div>
 				<div class="yuniq-ai-card">
 					<h2>گزینه‌های شروع گفتگو</h2>
-					<p class="description">بازدیدکننده با باز کردن دستیار این گزینه‌ها را می‌بیند و با یک لمس انتخاب می‌کند. هر گزینه یا یک سوال از دستیار می‌پرسد، یا (اگر لینک داشته باشد) مستقیم به آن صفحه می‌رود.</p>
+					<p class="description">اولین چیزی که بازدیدکننده با باز کردن دستیار می‌بیند. گزینه‌های خوب، مشخص و مربوط به همین سایت هستند.</p>
+					<?php $yq_options( 'starter_mode' ); ?>
+					<p class="yq-help">در حالت «خودکار» گزینه‌ها از محتوای ایندکس‌شده و تنظیمات شما ساخته می‌شوند و با تغییر سایت به‌روز می‌شوند. تا وقتی چیزی ایندکس نشده، فهرست دستی پایین نمایش داده می‌شود.</p>
+					<h3 class="yq-sub">فهرست دستی</h3>
+					<p class="description">هر گزینه یا یک سوال از دستیار می‌پرسد، یا (اگر لینک داشته باشد) مستقیم به آن صفحه می‌رود.</p>
 					<?php // Lets Settings::sanitize() tell "every row removed" apart from "field not on this form". ?>
 					<input type="hidden" name="yuniq_ai_settings[quick_actions_present]" value="1" />
 					<div id="yuniq-ai-quick-actions" class="yq-rows">
@@ -336,8 +340,9 @@ $yq_design_defaults = array_intersect_key(
 						<?php $yq_options( 'links_policy' ); ?>
 					</div>
 					<div class="yq-field">
-						<label class="yq-toggle-row"><?php $yq_switch( 'suggest_options' ); ?> گزینه‌های پیشنهادی زیر پاسخ</label>
-						<p class="yq-help">دستیار هر جا مناسب باشد ۲ تا ۴ گزینه آماده زیر پاسخش می‌گذارد تا بازدیدکننده به‌جای تایپ، انتخاب کند.</p>
+						<span class="yq-label">دکمه‌های پیشنهادی زیر پاسخ</span>
+						<?php $yq_options( 'suggest_mode' ); ?>
+						<p class="yq-help">دکمه‌ها همیشه از محتوای واقعی سایت ساخته می‌شوند (نام محصول، رنگ، مدل، خدمات). پیشنهادهای کلی مثل «اطلاعات بیشتر» خودکار حذف می‌شوند، و وقتی دستیار محصولی معرفی کند کارت آن با عکس، قیمت و دکمه خرید نمایش داده می‌شود (تا ۳ محصول).</p>
 					</div>
 				</div>
 

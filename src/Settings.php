@@ -71,6 +71,8 @@ final class Settings {
 			'reply_language'        => 'auto',
 			'links_policy'          => 'on_request',
 			'suggest_options'       => true,
+			'suggest_mode'          => 'smart',
+			'starter_mode'          => 'auto',
 			'history_limit'         => 6,
 			'context_documents'     => 5,
 			'request_timeout'       => 60,
@@ -311,7 +313,9 @@ final class Settings {
 		$output['reply_length']    = self::pick( $input, 'reply_length', array_keys( self::choices( 'reply_length' ) ), 'short' );
 		$output['reply_language']  = self::pick( $input, 'reply_language', array_keys( self::choices( 'reply_language' ) ), 'auto' );
 		$output['links_policy']    = self::pick( $input, 'links_policy', array_keys( self::choices( 'links_policy' ) ), 'on_request' );
-		$output['suggest_options'] = ! empty( $input['suggest_options'] );
+		$output['starter_mode']    = self::pick( $input, 'starter_mode', array_keys( self::choices( 'starter_mode' ) ), 'auto' );
+		$output['suggest_mode']    = self::pick( $input, 'suggest_mode', array_keys( self::choices( 'suggest_mode' ) ), 'smart' );
+		$output['suggest_options'] = 'off' !== $output['suggest_mode'];
 
 		$output['history_limit']     = self::clamp_int( $input, 'history_limit', 0, 20, 6 );
 		$output['context_documents'] = self::clamp_int( $input, 'context_documents', 1, 12, 5 );
@@ -523,6 +527,16 @@ final class Settings {
 			'links_policy'   => array(
 				'on_request' => array( 'فقط وقتی بخواهد', 'لینک فقط با درخواست صریح بازدیدکننده' ),
 				'helpful'    => array( 'هر جا مفید بود', 'لینک صفحه مرتبط را خودش پیشنهاد می‌دهد' ),
+			),
+			'starter_mode'   => array(
+				'auto'   => array( 'خودکار از سایت', 'دسته‌های اصلی محصولات، ارسال و مرجوعی، پیگیری سفارش، مشاوره و کارشناس (پیشنهادی)' ),
+				'manual' => array( 'دستی', 'فقط گزینه‌هایی که خودتان در پایین تعریف می‌کنید' ),
+				'off'    => array( 'بدون گزینه', 'فقط کادر پیام نمایش داده شود' ),
+			),
+			'suggest_mode'   => array(
+				'smart'   => array( 'هوشمند', 'انتخاب بین گزینه‌ها + قدم بعدی مرتبط (رنگ، قیمت، ارسال…)' ),
+				'choices' => array( 'فقط هنگام انتخاب', 'فقط وقتی چند محصول یا مدل معرفی شده و باید یکی انتخاب شود' ),
+				'off'     => array( 'خاموش', 'هیچ دکمه‌ای زیر پاسخ‌ها نمایش داده نشود' ),
 			),
 			'context_detail' => array(
 				'compact' => array( 'خلاصه', 'کم‌هزینه‌ترین؛ برای صفحات کوتاه' ),

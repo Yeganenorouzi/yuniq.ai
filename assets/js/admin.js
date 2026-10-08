@@ -8,6 +8,41 @@
 
 	var i18n = (window.yuniqAdmin && yuniqAdmin.i18n) || {};
 
+	/* ---------- Unsaved changes ---------- */
+	var $settingsForm = $('#yuniq-ai-settings-form');
+	var dirty = false;
+	var submitting = false;
+
+	function markDirty() {
+		if (dirty || !$settingsForm.length) return;
+		dirty = true;
+		$('#yuniq-ai-savebar').addClass('is-dirty');
+		$('#yuniq-ai-save-status').text(i18n.unsaved || 'تغییرات ذخیره‌نشده دارید');
+	}
+
+	// Real user edits only: scripted updates (presets, the preview) call
+	// markDirty() themselves where they change a value.
+	$settingsForm.on('input change', 'input, select, textarea', function (e) {
+		if (e.originalEvent) markDirty();
+	});
+
+	$settingsForm.on('submit', function () {
+		submitting = true;
+		$('#yuniq-ai-save-status').text(i18n.saving || 'در حال ذخیره...');
+	});
+
+	$(window).on('beforeunload', function () {
+		if (dirty && !submitting) return i18n.unsaved || 'تغییرات ذخیره‌نشده دارید';
+	});
+
+	// Ctrl/Cmd+S saves, as people expect from an editor.
+	$(document).on('keydown', function (e) {
+		if ($settingsForm.length && (e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 's') {
+			e.preventDefault();
+			$settingsForm.find('#submit').trigger('click');
+		}
+	});
+
 	/* ---------- Tabs ---------- */
 	// The last tab is remembered, so saving the form doesn't bounce the
 	// admin back to "General" every time.
@@ -20,7 +55,9 @@
 		$btn.addClass('active');
 		$('.yuniq-ai-tab-panel').removeClass('active');
 		$('#tab-' + tab).addClass('active');
-		try { sessionStorage.setItem(TAB_KEY, tab); } catch (e) {}
+		if ($('#yuniq-ai-settings-form').length) {
+			try { sessionStorage.setItem(TAB_KEY, tab); } catch (e) {}
+		}
 	}
 
 	$(document).on('click', '.yuniq-ai-tab-btn', function () {
@@ -30,6 +67,9 @@
 	if ($('#yuniq-ai-settings-form').length) {
 		var savedTab = null;
 		try { savedTab = sessionStorage.getItem(TAB_KEY); } catch (e) {}
+		// A link such as …page=yuniq-ai#ai opens that tab directly.
+		var hashTab = String(window.location.hash || '').replace(/[^a-z\-]/g, '');
+		if (hashTab && $('.yuniq-ai-tab-btn[data-tab="' + hashTab + '"]').length) savedTab = hashTab;
 		if (savedTab) showTab(savedTab);
 	}
 
@@ -45,12 +85,17 @@
 		return $f.val();
 	}
 
+	var pickersReady = false;
+	setTimeout(function () { pickersReady = true; }, 600);
+
 	if ($.fn.wpColorPicker) {
 		$('.yuniq-ai-color-picker').wpColorPicker({
 			change: function (event, ui) {
 				// Fires before the input's own value updates.
 				$(event.target).val(ui.color.toString());
 				updatePreview();
+				// The picker also fires while it initialises; that is not an edit.
+				if (pickersReady) markDirty();
 			},
 			clear: function () {
 				setTimeout(updatePreview, 0);
@@ -88,7 +133,9 @@
 
 		if (label) $list.append($('<span class="yuniq-ai-model-list-label">').text(label));
 		models.forEach(function (m) {
-			$list.append($('<button type="button" class="yuniq-ai-chip">').text(m).attr('data-model', m));
+			$list.append(
+				$('<button type="button" class="yuniq-ai-chip">').text(m).attr('data-model', m).toggleClass('is-selected', m === $model.val())
+			);
 			$options.append($('<option>').attr('value', m));
 		});
 	}
@@ -122,6 +169,7 @@
 			// Only overwrite silently when the current URL is itself a preset.
 			if (isPresetEndpoint($endpoint.val()) || confirm(i18n.replaceEndpoint)) {
 				$endpoint.val(p.endpoint);
+				warnInsecureEndpoint();
 			}
 		}
 		if (p && p.models && p.models.length && !$model.data('touched')) {
@@ -133,8 +181,20 @@
 
 	$model.on('input', function () { $model.data('touched', true); });
 
+	// A plain-http address sends the key unencrypted; say so right away.
+	function warnInsecureEndpoint() {
+		var url = $.trim($endpoint.val() || '');
+		var insecure = /^http:\/\//i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])([:\/]|$)/i.test(url);
+		$('#yuniq-ai-endpoint-warning').text(insecure ? (i18n.insecureEndpoint || '') : '');
+	}
+	$endpoint.on('input change', warnInsecureEndpoint);
+	if ($endpoint.length) warnInsecureEndpoint();
+
 	$(document).on('click', '.yuniq-ai-chip[data-model]', function () {
 		$model.val($(this).data('model')).data('touched', true);
+		$('.yuniq-ai-chip[data-model]').removeClass('is-selected');
+		$(this).addClass('is-selected');
+		markDirty();
 	});
 
 	function connectionPayload(action) {
@@ -205,6 +265,7 @@
 		if (!text) return;
 		if ($.trim($ta.val()) && !confirm(i18n.replacePrompt)) return;
 		$ta.val(text).trigger('focus');
+		markDirty();
 	});
 
 	/* ---------- Live preview (Settings > Design) ---------- */
@@ -318,6 +379,7 @@
 	function applyValues(values) {
 		Object.keys(values).forEach(function (key) { setField(key, values[key]); });
 		updatePreview();
+		markDirty();
 	}
 
 	$(document).on('click', '.yq-preset', function () {
@@ -359,6 +421,7 @@
 		frame.on('select', function () {
 			var attachment = frame.state().get('selection').first().toJSON();
 			$(targetSelector).val(attachment.url).trigger('change');
+			markDirty();
 		});
 		frame.open();
 	}
@@ -373,26 +436,48 @@
 		openMediaPicker(i18n.chooseLogo || 'انتخاب لوگو', '#yuniq-ai-logo-url');
 	});
 
-	/* ---------- Quick actions ---------- */
-	var qaIndex = $('#yuniq-ai-quick-actions .yuniq-ai-qa-row').length;
+	/* ---------- Starter options (quick actions) ---------- */
+	var $qaList = $('#yuniq-ai-quick-actions');
+	var qaIndex = $qaList.find('.yuniq-ai-qa-row').length;
+
+	function qaField(name, key, label, placeholder, extra) {
+		return $('<label class="yq-row-field">')
+			.addClass(extra && extra.wide ? 'yq-row-wide' : '')
+			.append($('<span>').text(label))
+			.append(
+				$('<input type="text">')
+					.attr({ name: name + '[' + key + ']', placeholder: placeholder })
+					.attr(extra && extra.ltr ? { dir: 'ltr' } : {})
+			);
+	}
+
+	function toggleQaEmpty() {
+		$('.yq-rows-empty').toggle($qaList.length > 0 && !$qaList.children().length);
+	}
 
 	$('#yuniq-ai-add-qa').on('click', function () {
 		var name = 'yuniq_ai_settings[quick_actions][' + qaIndex + ']';
-		var html =
-			'<div class="yuniq-ai-qa-row" style="flex-wrap:wrap;">' +
-			'<input type="text" name="' + name + '[label]" placeholder="عنوان کارت" style="width:110px;" />' +
-			'<input type="text" name="' + name + '[desc]" placeholder="توضیح کوتاه" style="width:110px;" />' +
-			'<input type="text" name="' + name + '[prompt]" placeholder="پرامپت AI" style="width:180px;" />' +
-			'<input type="url" name="' + name + '[link]" placeholder="لینک اختیاری" style="width:180px;" />' +
-			'<button type="button" class="button yuniq-ai-remove-qa">&times;</button>' +
-			'</div>';
-		$('#yuniq-ai-quick-actions').append(html);
+		var $row = $('<div class="yuniq-ai-qa-row yq-row">')
+			.append(qaField(name, 'label', 'عنوان', 'مثلاً قیمت‌ها'))
+			.append(qaField(name, 'desc', 'توضیح کوتاه', 'اختیاری'))
+			.append(qaField(name, 'prompt', 'سوالی که پرسیده می‌شود', 'خالی = همان عنوان', { wide: true }))
+			.append(qaField(name, 'link', 'یا لینک صفحه', '/services/', { wide: true, ltr: true }))
+			.append('<button type="button" class="button yuniq-ai-remove-qa" aria-label="حذف این گزینه">&times;</button>');
+
+		$qaList.append($row);
+		$row.find('input').first().trigger('focus');
 		qaIndex++;
+		toggleQaEmpty();
+		markDirty();
 	});
 
 	$(document).on('click', '.yuniq-ai-remove-qa', function () {
 		$(this).closest('.yuniq-ai-qa-row').remove();
+		toggleQaEmpty();
+		markDirty();
 	});
+
+	toggleQaEmpty();
 
 	/* ---------- Batched crawl ---------- */
 	var crawl = {
@@ -415,12 +500,16 @@
 		}, data || {}));
 	}
 
+	function faNum(n) {
+		try { return Number(n).toLocaleString('fa-IR'); } catch (e) { return String(n); }
+	}
+
 	function setProgress(processed, total) {
 		var percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
 		$fill.css('width', percent + '%');
 		$msg.text(
-			(i18n.indexed || 'ایندکس‌شده:') + ' ' + processed +
-			(total ? ' / ' + total : '') + ' (' + percent + '%)'
+			(i18n.indexed || 'ایندکس‌شده:') + ' ' + faNum(processed) +
+			(total ? ' از ' + faNum(total) : '') + ' (' + faNum(percent) + '٪)'
 		);
 	}
 
@@ -468,15 +557,24 @@
 
 				if (data.done) {
 					$fill.css('width', '100%');
-					$('#yuniq-ai-kb-count').text(data.processed || 0);
+					$('#yuniq-ai-kb-count').text(faNum(data.processed || 0));
 					$('#yuniq-ai-crawl-status').text(i18n.completedShort || 'تکمیل‌شده');
 					crawlUiEnd(data.message || i18n.completed, true);
 					return;
 				}
 
+				crawl.retries = 0;
 				runBatch();
 			})
 			.fail(function () {
+				// One slow or dropped request should not throw away a long
+				// crawl: the cursor lives on the server, so the same batch
+				// can simply be asked for again.
+				crawl.retries = (crawl.retries || 0) + 1;
+				if (crawl.retries <= 3) {
+					setTimeout(runBatch, 1500 * crawl.retries);
+					return;
+				}
 				crawlUiEnd(i18n.error || 'خطایی رخ داد.');
 			});
 	}
@@ -560,7 +658,7 @@
 		var name = 'yuniq_ai_settings[lead_forms][0][fields][' + leadFieldIndex + ']';
 		var html =
 			'<div class="yuniq-ai-qa-row">' +
-			'<input type="text" name="' + name + '[label]" placeholder="عنوان فیلد" style="width:200px;" />' +
+			'<input type="text" name="' + name + '[label]" placeholder="عنوان فیلد (مثلاً نام شما)" />' +
 			'<select name="' + name + '[type]">' +
 			'<option value="text">متن</option>' +
 			'<option value="tel">تلفن</option>' +
@@ -572,23 +670,107 @@
 			'</div>';
 		$('#yuniq-ai-lead-fields').append(html);
 		leadFieldIndex++;
+		markDirty();
 	});
+
+	/* ---------- Status and error log screen ---------- */
+	var $checks = $('#yuniq-ai-checks');
+
+	if ($checks.length) {
+		// Run from the browser on purpose: this is the same request the
+		// widget makes, so a firewall that blocks visitors shows up here.
+		var restRow = function (ok) {
+			var $row = $('<li class="yq-check">').addClass(ok ? 'yq-check-ok' : 'yq-check-fail')
+				.append($('<span class="dashicons" aria-hidden="true">').addClass(ok ? 'dashicons-yes-alt' : 'dashicons-dismiss'))
+				.append(
+					$('<div>')
+						.append($('<strong>').text(ok ? i18n.restOk : i18n.restFail))
+						.append($('<p>').text(ok ? i18n.restOkText : i18n.restFailText))
+				);
+			if (ok) $checks.append($row);
+			else $checks.prepend($row);
+		};
+
+		if (window.fetch && yuniqAdmin.restUrl) {
+			fetch(yuniqAdmin.restUrl, { credentials: 'omit', cache: 'no-store' })
+				.then(function (res) { return res.ok ? res.json() : Promise.reject(); })
+				.then(function (data) { restRow(!!data && typeof data === 'object' && 'enabled' in data); })
+				.catch(function () { restRow(false); });
+		}
+
+		$('#yuniq-ai-clear-log').on('click', function () {
+			if (!confirm(i18n.confirmClearLog || '')) return;
+			var $btn = $(this).prop('disabled', true);
+			post('yuniq_ai_clear_log')
+				.done(function () { location.reload(); })
+				.fail(function () { $btn.prop('disabled', false); });
+		});
+
+		$('#yuniq-ai-test-notify').on('click', function () {
+			var $btn = $(this).prop('disabled', true);
+			var $out = $('#yuniq-ai-notify-result').removeClass('is-ok is-error').addClass('is-pending').text(i18n.sending || '');
+
+			var show = function (ok, res) {
+				var message = res && res.data && res.data.message;
+				$out.removeClass('is-pending').addClass(ok ? 'is-ok' : 'is-error')
+					.css('white-space', 'pre-line').text(message || i18n.requestFailed || '');
+			};
+
+			post('yuniq_ai_test_notify')
+				.done(function (res) { show(!!(res && res.success), res); })
+				.fail(function (xhr) { show(false, xhr && xhr.responseJSON); })
+				.always(function () { $btn.prop('disabled', false); });
+		});
+
+		$('#yuniq-ai-copy-report').on('click', function () {
+			var $btn = $(this);
+			var field = document.getElementById('yuniq-ai-report');
+			var label = $btn.text();
+			var done = function () {
+				$btn.text('✓ ' + (i18n.copied || ''));
+				setTimeout(function () { $btn.text(label); }, 1800);
+			};
+
+			if (navigator.clipboard && window.isSecureContext) {
+				navigator.clipboard.writeText(field.value).then(done, function () { field.select(); });
+			} else {
+				field.select();
+				try { if (document.execCommand('copy')) done(); } catch (e) {}
+			}
+		});
+
+		$(document).on('click', '.yq-log-filters .yuniq-ai-ls-filter', function () {
+			var level = $(this).data('level') || '';
+			$('.yq-log-filters .yuniq-ai-ls-filter').removeClass('active');
+			$(this).addClass('active');
+			$('#yuniq-ai-log .yq-log-row').each(function () {
+				$(this).toggle(!level || $(this).data('level') === level);
+			});
+		});
+	}
 
 	/* ---------- Live Support inbox ---------- */
 	var $lsList = $('#yuniq-ai-ls-list');
 
 	if ($lsList.length) {
-		var lsState = { sessionId: null, filter: '' };
+		var lsState = { sessionId: null, filter: '', threadSig: '', listSig: '', leadsSig: '' };
+		var anonymous = i18n.lsAnonymous || 'بازدیدکننده ناشناس';
 
 		function escHtml(text) {
 			return String(text === undefined || text === null ? '' : text)
 				.replace(/&/g, '&amp;')
 				.replace(/</g, '&lt;')
-				.replace(/>/g, '&gt;');
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
 		}
 
 		function lsStatusLabel(status) {
 			return { pending: i18n.lsStatusPending, active: i18n.lsStatusActive, resolved: i18n.lsStatusResolved }[status] || status;
+		}
+
+		function lsRoleLabel(role) {
+			return { user: i18n.lsRoleUser, assistant: i18n.lsRoleBot, agent: i18n.lsRoleAgent }[role] || '';
 		}
 
 		function lsRefreshList() {
@@ -596,6 +778,12 @@
 				if (!res || !res.success) return;
 
 				var rows = res.data.conversations || [];
+				var sig = JSON.stringify(rows) + '|' + lsState.sessionId;
+
+				// Nothing changed since the last poll: leave the DOM (and the
+				// admin's hover, focus and scroll position) alone.
+				if (sig === lsState.listSig) return;
+				lsState.listSig = sig;
 
 				if (!rows.length) {
 					$lsList.html('<p class="description" style="padding:14px;">' + escHtml(i18n.lsNoConversations || '') + '</p>');
@@ -606,11 +794,11 @@
 				rows.forEach(function (c) {
 					html += '<button type="button" class="yuniq-ai-ls-row' + (c.session_id === lsState.sessionId ? ' is-active' : '') + '" data-session-id="' + escHtml(c.session_id) + '">' +
 						'<span class="yuniq-ai-ls-row-top">' +
-						'<span class="yuniq-ai-ls-row-name">' + escHtml(c.visitor_name || 'بازدیدکننده ناشناس') + '</span>' +
+						'<span class="yuniq-ai-ls-row-name">' + escHtml(c.visitor_name || anonymous) + '</span>' +
 						'<span class="yuniq-ai-ls-badge yuniq-ai-ls-badge-' + escHtml(c.status) + '">' + escHtml(lsStatusLabel(c.status)) + '</span>' +
 						'</span>' +
-						'<span class="yuniq-ai-ls-row-meta">' + escHtml(c.last_message_at || c.created_at || '') +
-						(parseInt(c.unread_for_admin, 10) ? '<span class="yuniq-ai-ls-unread-dot"></span>' : '') +
+						'<span class="yuniq-ai-ls-row-meta">' + escHtml(c.time_label || '') +
+						(parseInt(c.unread_for_admin, 10) && c.session_id !== lsState.sessionId ? '<span class="yuniq-ai-ls-unread-dot"></span>' : '') +
 						'</span></button>';
 				});
 				$lsList.html(html);
@@ -618,30 +806,59 @@
 		}
 
 		function lsRenderThread(conversation, messages) {
+			var status = (conversation && conversation.status) || '';
+			var sig = status + '|' + messages.length + '|' + (messages.length ? messages[messages.length - 1].id : 0);
+
 			$('#yuniq-ai-ls-thread-empty').hide();
 			$('#yuniq-ai-ls-thread').show();
-			$('#yuniq-ai-ls-thread-name').text((conversation && conversation.visitor_name) || 'بازدیدکننده ناشناس');
+			$('#yuniq-ai-ls-thread-name').text((conversation && conversation.visitor_name) || anonymous);
 			$('#yuniq-ai-ls-thread-contact').text((conversation && conversation.visitor_contact) || '');
+
+			// What the agent may do depends on where the conversation is.
+			$('#yuniq-ai-ls-claim').toggle(status === 'pending');
+			$('#yuniq-ai-ls-resolve').toggle(status === 'pending' || status === 'active');
+			$('#yuniq-ai-ls-reply-form').toggle(status !== 'resolved');
+			$('#yuniq-ai-ls-closed-note').toggle(status === 'resolved');
+
+			if (sig === lsState.threadSig) return;
+
+			var $box = $('#yuniq-ai-ls-messages');
+			var box = $box[0];
+			// Follow new messages only if the agent was already at the bottom.
+			var stick = !lsState.threadSig || (box.scrollHeight - box.scrollTop - box.clientHeight < 60);
+			lsState.threadSig = sig;
 
 			var html = '';
 			messages.forEach(function (m) {
-				// Message content is sanitized server-side with wp_kses_post
-				// before storage, so it is safe to render as HTML here.
-				html += '<div class="yuniq-ai-ls-msg yuniq-ai-ls-msg-' + escHtml(m.role) + '">' + m.content + '</div>';
+				// Rendered as text: the visitor wrote part of this transcript.
+				html += '<div class="yuniq-ai-ls-msg yuniq-ai-ls-msg-' + escHtml(m.role) + '" dir="auto">' +
+					'<span class="yuniq-ai-ls-msg-role">' + escHtml(lsRoleLabel(m.role)) + '</span>' +
+					escHtml(m.content).replace(/\n/g, '<br>') + '</div>';
 			});
-			var $box = $('#yuniq-ai-ls-messages').html(html);
-			$box.scrollTop($box.prop('scrollHeight'));
+			$box.html(html);
+			if (stick) $box.scrollTop(box.scrollHeight);
+		}
+
+		function lsLoadThread() {
+			if (!lsState.sessionId) return;
+			var requested = lsState.sessionId;
+
+			post('yuniq_ai_ls_messages', { session_id: requested }).done(function (res) {
+				// The admin may have opened another conversation meanwhile.
+				if (!res || !res.success || requested !== lsState.sessionId) return;
+				lsRenderThread(res.data.conversation, res.data.messages || []);
+			});
 		}
 
 		function lsOpenConversation(sessionId) {
 			lsState.sessionId = sessionId;
+			lsState.threadSig = '';
 			$('.yuniq-ai-ls-row').removeClass('is-active');
-			$('.yuniq-ai-ls-row[data-session-id="' + sessionId + '"]').addClass('is-active').find('.yuniq-ai-ls-unread-dot').remove();
-
-			post('yuniq_ai_ls_messages', { session_id: sessionId }).done(function (res) {
-				if (!res || !res.success) return;
-				lsRenderThread(res.data.conversation, res.data.messages || []);
-			});
+			$('.yuniq-ai-ls-row').filter(function () { return $(this).data('session-id') === sessionId; })
+				.addClass('is-active').find('.yuniq-ai-ls-unread-dot').remove();
+			$('#yuniq-ai-ls-messages').empty();
+			$('#yuniq-ai-ls-error').empty();
+			lsLoadThread();
 		}
 
 		function lsRefreshLeads() {
@@ -649,23 +866,40 @@
 				if (!res || !res.success) return;
 
 				var leads = res.data.leads || [];
+				var sig = JSON.stringify(leads);
+				if (sig === lsState.leadsSig) return;
+				lsState.leadsSig = sig;
 
 				if (!leads.length) {
-					$('#yuniq-ai-ls-leads-table').html('<p class="description">هنوز سرنخی ثبت نشده است.</p>');
+					$('#yuniq-ai-ls-leads-table').html('<p class="description">' + escHtml(i18n.lsNoLeads || 'هنوز سرنخی ثبت نشده است.') + '</p>');
 					return;
 				}
 
-				var html = '<table class="widefat striped"><thead><tr><th>تاریخ</th><th>فرم</th><th>اطلاعات</th></tr></thead><tbody>';
+				var html = '<div class="yuniq-ai-table-scroll"><table class="widefat striped"><thead><tr><th>تاریخ</th><th>اطلاعات</th></tr></thead><tbody>';
 				leads.forEach(function (l) {
 					var fields = l.fields || {};
 					var fieldsHtml = Object.keys(fields).map(function (k) {
-						return '<strong>' + escHtml(k) + ':</strong> ' + escHtml(fields[k]);
+						return '<strong>' + escHtml(k) + ':</strong> <span dir="auto">' + escHtml(fields[k]) + '</span>';
 					}).join('<br>');
-					html += '<tr><td>' + escHtml(l.created_at) + '</td><td>' + escHtml(l.form_key) + '</td><td>' + fieldsHtml + '</td></tr>';
+					html += '<tr><td>' + escHtml(l.created_at) + '</td><td>' + fieldsHtml + '</td></tr>';
 				});
-				html += '</tbody></table>';
+				html += '</tbody></table></div>';
 				$('#yuniq-ai-ls-leads-table').html(html);
 			});
+		}
+
+		function lsAction(action, data) {
+			$('#yuniq-ai-ls-error').empty();
+			return post(action, $.extend({ session_id: lsState.sessionId }, data || {}))
+				.fail(function (xhr) {
+					var message = xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message;
+					$('#yuniq-ai-ls-error').text(message || i18n.requestFailed || '');
+				})
+				.always(function () {
+					lsState.threadSig = '';
+					lsLoadThread();
+					lsRefreshList();
+				});
 		}
 
 		$(document).on('click', '.yuniq-ai-ls-row', function () {
@@ -682,42 +916,45 @@
 		$('#yuniq-ai-ls-reply-form').on('submit', function (e) {
 			e.preventDefault();
 			var $input = $('#yuniq-ai-ls-reply-input');
-			var message = $input.val().trim();
-			if (!message || !lsState.sessionId) return;
+			var $send = $(this).find('button[type="submit"]');
+			var message = $.trim($input.val());
+			if (!message || !lsState.sessionId || $send.prop('disabled')) return;
 
-			post('yuniq_ai_ls_reply', { session_id: lsState.sessionId, message: message }).done(function (res) {
-				if (res && res.success) {
-					$input.val('');
-					lsOpenConversation(lsState.sessionId);
-					lsRefreshList();
-				}
-			});
+			$send.prop('disabled', true);
+			lsAction('yuniq_ai_ls_reply', { message: message })
+				.done(function (res) { if (res && res.success) $input.val(''); })
+				.always(function () { $send.prop('disabled', false); $input.trigger('focus'); });
+		});
+
+		// Enter sends, Shift+Enter makes a new line — same as the widget.
+		$('#yuniq-ai-ls-reply-input').on('keydown', function (e) {
+			if (e.key === 'Enter' && !e.shiftKey && !(e.originalEvent && e.originalEvent.isComposing)) {
+				e.preventDefault();
+				$('#yuniq-ai-ls-reply-form').trigger('submit');
+			}
 		});
 
 		$('#yuniq-ai-ls-claim').on('click', function () {
-			if (!lsState.sessionId) return;
-			post('yuniq_ai_ls_claim', { session_id: lsState.sessionId }).done(function () {
-				lsOpenConversation(lsState.sessionId);
-				lsRefreshList();
-			});
+			if (lsState.sessionId) lsAction('yuniq_ai_ls_claim');
 		});
 
 		$('#yuniq-ai-ls-resolve').on('click', function () {
 			if (!lsState.sessionId || !confirm(i18n.lsConfirmResolve || '')) return;
-			post('yuniq_ai_ls_resolve', { session_id: lsState.sessionId }).done(function () {
-				lsOpenConversation(lsState.sessionId);
-				lsRefreshList();
-			});
+			lsAction('yuniq_ai_ls_resolve');
 		});
 
 		lsRefreshList();
 		lsRefreshLeads();
 
+		// No polling while the tab is in the background.
 		setInterval(function () {
+			if (document.hidden) return;
 			lsRefreshList();
-			lsRefreshLeads();
-			if (lsState.sessionId) lsOpenConversation(lsState.sessionId);
-		}, 8000);
+			lsLoadThread();
+			if ($('#tab-ls-leads').hasClass('active')) lsRefreshLeads();
+		}, 6000);
+
+		$(document).on('click', '.yuniq-ai-tab-btn[data-tab="ls-leads"]', lsRefreshLeads);
 	}
 
 })(jQuery);

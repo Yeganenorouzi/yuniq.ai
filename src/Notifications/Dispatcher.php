@@ -9,6 +9,8 @@
 namespace Yuniq\Ai\Notifications;
 
 use Yuniq\Ai\Settings;
+use Yuniq\Ai\Support\Logger;
+use Yuniq\Ai\Support\Text;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -75,6 +77,11 @@ final class Dispatcher {
 		$subject = __( 'یک سرنخ جدید از دستیار هوشمند ثبت شد', 'yuniq-ai' );
 
 		$lines = array( sprintf( 'سایت: %s', home_url() ) );
+
+		if ( ! empty( $lead['form_title'] ) ) {
+			$lines[] = sprintf( 'فرم: %s', $lead['form_title'] );
+		}
+
 		foreach ( (array) $lead['fields'] as $name => $value ) {
 			$lines[] = sprintf( '%s: %s', $name, $value );
 		}
@@ -84,12 +91,25 @@ final class Dispatcher {
 	}
 
 	/**
-	 * Send through every channel the admin has enabled.
+	 * Send a test message through every enabled channel.
 	 *
-	 * @param string $subject Short summary line.
-	 * @param string $message Full body.
-	 * @param array  $context Passed through to the `yuniq_ai_notify_channels` filter.
-	 * @return void
+	 * @return array<string,true|string> Channel => true, or why it failed.
+	 */
+	public function send_test() {
+		return $this->dispatch(
+			__( 'پیام آزمایشی دستیار هوشمند', 'yuniq-ai' ),
+			sprintf( "سایت: %s\nاگر این پیام را می‌بینید، اعلان‌ها درست کار می‌کنند.", home_url() ),
+			array( 'test' => true )
+		);
+	}
+
+	/**
+	 * Fan a notification out to every enabled channel.
+	 *
+	 * @param string $subject Short subject line.
+	 * @param string $message Plain-text body.
+	 * @param array  $context The conversation or lead that triggered it.
+	 * @return array<string,true|string> Channel => true, or why it failed.
 	 */
 	private function dispatch( $subject, $message, array $context ) {
 		$default_channels = array(
@@ -100,56 +120,88 @@ final class Dispatcher {
 		/**
 		 * Filters the available notification channels.
 		 *
-		 * @param array<string,callable> $channels Channel key => callable( $subject, $message ).
-		 * @param array                  $context  The escalation or lead being notified about.
+		 * @param array<string,callable> $channels Channel key => sender.
+		 * @param array                  $context  What triggered the notification.
 		 */
 		$channels = apply_filters( 'yuniq_ai_notify_channels', $default_channels, $context );
 		$enabled  = (array) $this->settings->get( 'notify_channels', array() );
+		$results  = array();
 
 		foreach ( $enabled as $key ) {
-			if ( isset( $channels[ $key ] ) && is_callable( $channels[ $key ] ) ) {
-				call_user_func( $channels[ $key ], $subject, $message );
+			if ( ! isset( $channels[ $key ] ) || ! is_callable( $channels[ $key ] ) ) {
+				continue;
+			}
+
+			$result          = call_user_func( $channels[ $key ], $subject, $message );
+			$results[ $key ] = ( true === $result || null === $result ) ? true : (string) $result;
+
+			if ( true !== $results[ $key ] ) {
+				Logger::error( 'notify', sprintf( 'اعلان از کانال «%s» ارسال نشد: %s', $key, $results[ $key ] ) );
 			}
 		}
+
+		return $results;
 	}
 
 	/**
-	 * @param string $subject Email subject.
-	 * @param string $message Email body.
-	 * @return void
+	 * Email channel.
+	 *
+	 * @param string $subject Subject line.
+	 * @param string $message Plain-text body.
+	 * @return true|string True, or the reason it was not sent.
 	 */
 	private function send_email( $subject, $message ) {
-		$to = $this->settings->get( 'notify_email' );
+		$to = sanitize_email( (string) $this->settings->get( 'notify_email' ) );
 
 		if ( ! $to ) {
-			return;
+			return __( 'ایمیل دریافت اعلان تنظیم نشده است.', 'yuniq-ai' );
 		}
 
-		wp_mail( $to, $subject, $message );
+		// Visitor-supplied text is in the body: one line break style, no headers.
+		return wp_mail( $to, wp_strip_all_tags( $subject ), $message )
+			? true
+			: __( 'وردپرس نتوانست ایمیل را ارسال کند. تنظیمات ایمیل هاست یا افزونه SMTP را بررسی کنید.', 'yuniq-ai' );
 	}
 
 	/**
-	 * @param string $subject Prefixed onto the Telegram message as a heading.
-	 * @param string $message Message body.
-	 * @return void
+	 * Telegram channel.
+	 *
+	 * @param string $subject Subject line.
+	 * @param string $message Plain-text body.
+	 * @return true|string True, or the reason it was not sent.
 	 */
 	private function send_telegram( $subject, $message ) {
-		$token   = $this->settings->get( 'telegram_bot_token' );
-		$chat_id = $this->settings->get( 'telegram_chat_id' );
+		$token   = (string) $this->settings->get( 'telegram_bot_token' );
+		$chat_id = (string) $this->settings->get( 'telegram_chat_id' );
 
-		if ( ! $token || ! $chat_id ) {
-			return;
+		if ( '' === $token || '' === $chat_id ) {
+			return __( 'توکن ربات یا شناسه چت تلگرام وارد نشده است.', 'yuniq-ai' );
 		}
 
-		wp_remote_post(
+		$response = wp_remote_post(
 			'https://api.telegram.org/bot' . rawurlencode( $token ) . '/sendMessage',
 			array(
-				'timeout' => 10,
-				'body'    => array(
+				'timeout'     => 10,
+				'redirection' => 0,
+				'body'        => array(
 					'chat_id' => $chat_id,
-					'text'    => $subject . "\n\n" . $message,
+					'text'    => Text::truncate( $subject . "\n\n" . $message, 3500, '…' ),
 				),
 			)
 		);
+
+		if ( is_wp_error( $response ) ) {
+			return __( 'اتصال به تلگرام برقرار نشد (از هاست ایران معمولاً مسدود است):', 'yuniq-ai' ) . ' ' . $response->get_error_message();
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+
+		if ( 200 !== $code ) {
+			$body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+			return sprintf( 'تلگرام خطای %d داد: %s', $code, isset( $body['description'] ) ? $body['description'] : '' );
+		}
+
+		return true;
 	}
 }

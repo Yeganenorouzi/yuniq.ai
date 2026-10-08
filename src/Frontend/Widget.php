@@ -10,6 +10,7 @@ namespace Yuniq\Ai\Frontend;
 
 use Yuniq\Ai\Ai\Client;
 use Yuniq\Ai\Contracts\HookableInterface;
+use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\Rest\ChatController;
 use Yuniq\Ai\Settings;
 use Yuniq\Ai\Support\Assets;
@@ -43,6 +44,13 @@ final class Widget implements HookableInterface {
 	private $client;
 
 	/**
+	 * Knowledge base, the source of the automatic starter options.
+	 *
+	 * @var KnowledgeBase
+	 */
+	private $knowledge_base;
+
+	/**
 	 * Whether the `[yuniq_ai_page]` shortcode already printed the widget
 	 * markup earlier in this request, so the floating footer copy can skip
 	 * itself — otherwise the page would end up with two elements sharing
@@ -57,9 +65,11 @@ final class Widget implements HookableInterface {
 	 *
 	 * @param Settings $settings Plugin settings.
 	 * @param Client   $client   AI client.
+	 * @param KnowledgeBase $knowledge_base Knowledge base storage.
 	 */
-	public function __construct( Settings $settings, Client $client ) {
-		$this->settings = $settings;
+	public function __construct( Settings $settings, Client $client, KnowledgeBase $knowledge_base ) {
+		$this->knowledge_base = $knowledge_base;
+		$this->settings       = $settings;
 		$this->client   = $client;
 	}
 
@@ -68,7 +78,6 @@ final class Widget implements HookableInterface {
 	 */
 	public function register_hooks() {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
-		add_action( 'wp_head', array( $this, 'preload_font' ), 1 );
 		add_action( 'wp_footer', array( $this, 'render' ) );
 		add_shortcode( 'yuniq_ai_page', array( $this, 'render_full_page' ) );
 	}
@@ -85,27 +94,6 @@ final class Widget implements HookableInterface {
 		 * @param bool $active Whether the widget is enabled.
 		 */
 		return (bool) apply_filters( 'yuniq_ai_is_active', (bool) $this->settings->get( 'enabled' ) );
-	}
-
-	/**
-	 * Preload the primary font weight.
-	 *
-	 * The font is served from this plugin rather than Google Fonts, which
-	 * is slow or unreachable from Iran and leaks visitor IPs to a third
-	 * party. Preloading the one weight used for body text keeps the first
-	 * paint from flashing the fallback.
-	 *
-	 * @return void
-	 */
-	public function preload_font() {
-		if ( ! $this->is_active() || ! $this->is_shown_here() || 'vazirmatn' !== $this->settings->get( 'font_family', 'vazirmatn' ) ) {
-			return;
-		}
-
-		printf(
-			'<link rel="preload" href="%s" as="font" type="font/woff2" crossorigin>' . "\n",
-			esc_url( YUNIQ_AI_URL . 'assets/fonts/vazirmatn-400.woff2' )
-		);
 	}
 
 	/**
@@ -185,7 +173,12 @@ final class Widget implements HookableInterface {
 			YUNIQ_AI_URL . 'assets/js/public.js',
 			array(),
 			Assets::version( 'assets/js/public.js' ),
-			true
+			// Deferred: the widget never needs to hold up the page's own
+			// rendering. WordPress before 6.3 reads this array as "in footer".
+			array(
+				'in_footer' => true,
+				'strategy'  => 'defer',
+			)
 		);
 
 		wp_localize_script(
@@ -193,7 +186,10 @@ final class Widget implements HookableInterface {
 			'yuniqAI',
 			array(
 				'restUrl'  => esc_url_raw( rest_url( ChatController::NAMESPACE_V1 . '/' ) ),
-				'nonce'    => wp_create_nonce( 'wp_rest' ),
+				// The routes are public. A nonce is only useful (and only safe
+				// to print) for logged-in users: on a cached page a guest's
+				// nonce expires and WordPress then rejects every request.
+				'nonce'    => is_user_logged_in() ? wp_create_nonce( 'wp_rest' ) : '',
 				'settings' => $this->script_settings(),
 			)
 		);
@@ -220,7 +216,7 @@ final class Widget implements HookableInterface {
 				'agentName' => (string) $this->settings->get( 'agent_display_name' ),
 			),
 			'productCards'     => (bool) $this->settings->get( 'product_cards_enabled' ),
-			'leadForms'        => (array) $this->settings->get( 'lead_forms', array() ),
+			'leadForms'        => array_values( (array) $this->settings->get( 'lead_forms', array() ) ),
 			// Both files live in this plugin: nothing is fetched from a CDN,
 			// and they load only when the visitor moves to open the panel.
 			'motion'           => array(
@@ -240,6 +236,7 @@ final class Widget implements HookableInterface {
 				'escalating'       => __( 'در حال اتصال به کارشناس...', 'yuniq-ai' ),
 				'connectedToAgent' => __( 'به کارشناس پشتیبانی متصل شدید', 'yuniq-ai' ),
 				'resolvedByAgent'  => __( 'گفتگو با کارشناس پایان یافت. دستیار هوشمند دوباره در خدمت شماست.', 'yuniq-ai' ),
+				'agentWillReply'   => __( 'درخواست شما ثبت شد. پیام خود را همین‌جا بنویسید؛ کارشناس به‌زودی پاسخ می‌دهد.', 'yuniq-ai' ),
 				'agentLabel'       => (string) $this->settings->get( 'agent_display_name' ),
 				'formRequired'     => __( 'این فیلد الزامی است.', 'yuniq-ai' ),
 				'formSubmitted'    => __( 'با تشکر! به‌زودی با شما تماس گرفته می‌شود.', 'yuniq-ai' ),
@@ -274,29 +271,128 @@ final class Widget implements HookableInterface {
 	}
 
 	/**
-	 * Quick action cards with unlabeled rows removed.
+	 * The options a visitor sees before typing anything.
+	 *
+	 * In `auto` mode they are built from the site itself — its real
+	 * product categories, the owner's shipping/contact details, order
+	 * tracking, the human-support and lead-form actions — instead of a
+	 * fixed list of generic questions that fits no shop in particular.
+	 * Each card carries a label, an optional description, and one of: a
+	 * prompt to ask, a link to open, or an action to run.
 	 *
 	 * @return array
 	 */
 	private function quick_actions() {
-		$actions = (array) $this->settings->get( 'quick_actions', array() );
+		$mode = (string) $this->settings->get( 'starter_mode', 'auto' );
 
-		$actions = array_values(
+		if ( 'off' === $mode ) {
+			return array();
+		}
+
+		if ( 'auto' === $mode ) {
+			$auto = $this->auto_actions();
+
+			// Nothing indexed yet: the owner's own list is better than nothing.
+			if ( count( $auto ) >= 2 ) {
+				return $auto;
+			}
+		}
+
+		return array_values(
 			array_filter(
-				$actions,
+				(array) $this->settings->get( 'quick_actions', array() ),
 				function ( $action ) {
 					return is_array( $action ) && ! empty( $action['label'] );
 				}
 			)
 		);
+	}
 
-		if ( $actions ) {
-			return $actions;
+	/**
+	 * Starter options derived from the indexed site and the settings.
+	 *
+	 * @return array
+	 */
+	private function auto_actions() {
+		$actions = array();
+
+		// What the site is actually about: its biggest categories.
+		$is_shop = class_exists( 'WooCommerce' );
+		$terms   = $is_shop ? $this->knowledge_base->top_terms( 'tax_product_cat', 3 ) : array();
+
+		foreach ( $terms as $term ) {
+			$actions[] = array(
+				'label'  => $term['title'],
+				'desc'   => $term['count']
+					/* translators: %s: number of products. */
+					? sprintf( __( '%s محصول', 'yuniq-ai' ), number_format_i18n( $term['count'] ) )
+					: __( 'مشاهده محصولات', 'yuniq-ai' ),
+				/* translators: %s: category name. */
+				'prompt' => sprintf( __( 'چه محصولاتی در دسته «%s» دارید؟', 'yuniq-ai' ), $term['title'] ),
+			);
 		}
 
-		$defaults = Settings::defaults();
+		if ( ! $terms ) {
+			foreach ( $this->knowledge_base->top_terms( 'tax_category', 2 ) as $term ) {
+				$actions[] = array(
+					'label'  => $term['title'],
+					'desc'   => __( 'مطالب این موضوع', 'yuniq-ai' ),
+					/* translators: %s: category name. */
+					'prompt' => sprintf( __( 'درباره «%s» چه مطالبی دارید؟', 'yuniq-ai' ), $term['title'] ),
+				);
+			}
+		}
 
-		return $defaults['quick_actions'];
+		// What the owner told the assistant about the business.
+		$info = (string) $this->settings->get( 'business_info', '' );
+
+		if ( preg_match( '/ارسال|پست|پیک|تحویل|مرجوع/u', $info ) ) {
+			$actions[] = array(
+				'label'  => __( 'ارسال و مرجوعی', 'yuniq-ai' ),
+				'desc'   => __( 'هزینه، زمان و شرایط', 'yuniq-ai' ),
+				'prompt' => __( 'هزینه و زمان ارسال و شرایط مرجوعی چطور است؟', 'yuniq-ai' ),
+			);
+		}
+
+		if ( $is_shop && function_exists( 'wc_get_account_endpoint_url' ) ) {
+			$actions[] = array(
+				'label' => __( 'پیگیری سفارش', 'yuniq-ai' ),
+				'desc'  => __( 'وضعیت سفارش‌های من', 'yuniq-ai' ),
+				'link'  => wc_get_account_endpoint_url( 'orders' ),
+			);
+		}
+
+		foreach ( array_slice( (array) $this->settings->get( 'lead_forms', array() ), 0, 1 ) as $form ) {
+			if ( ! empty( $form['key'] ) && ! empty( $form['trigger_label'] ) ) {
+				$actions[] = array(
+					'label'    => $form['trigger_label'],
+					'desc'     => __( 'با شما تماس می‌گیریم', 'yuniq-ai' ),
+					'action'   => 'form',
+					'form_key' => $form['key'],
+				);
+			}
+		}
+
+		if ( $this->settings->get( 'live_support_enabled' ) && 'auto_suggest' !== $this->settings->get( 'live_support_mode' ) ) {
+			$actions[] = array(
+				'label'  => __( 'صحبت با کارشناس', 'yuniq-ai' ),
+				'desc'   => __( 'پاسخ از یک نفر واقعی', 'yuniq-ai' ),
+				'action' => 'human',
+			);
+		} elseif ( preg_match( '/تلفن|تماس|ساعت|آدرس|نشانی/u', $info ) ) {
+			$actions[] = array(
+				'label'  => __( 'تماس و ساعت کاری', 'yuniq-ai' ),
+				'desc'   => __( 'تلفن، آدرس، ساعت پاسخ‌گویی', 'yuniq-ai' ),
+				'prompt' => __( 'راه‌های تماس و ساعت کاری شما چیست؟', 'yuniq-ai' ),
+			);
+		}
+
+		/**
+		 * Filters the automatically generated starter options.
+		 *
+		 * @param array $actions Cards: label, desc, and prompt, link or action.
+		 */
+		return array_slice( (array) apply_filters( 'yuniq_ai_auto_starters', $actions ), 0, 6 );
 	}
 
 	/**
@@ -496,6 +592,7 @@ final class Widget implements HookableInterface {
 		$header_sub     = (string) $this->settings->get( 'header_subtitle' );
 		$help_title     = (string) $this->settings->get( 'help_title' );
 		$help_sub       = (string) $this->settings->get( 'help_subtitle' );
+		$hint           = (string) $this->settings->get( 'suggestion_text' );
 		$shape          = (string) $this->settings->get( 'launcher_shape', 'squircle' );
 		$launcher_label = (string) $this->settings->get( 'launcher_label', '' );
 		$is_pill        = 'pill' === $shape && '' !== $launcher_label;
@@ -571,6 +668,11 @@ final class Widget implements HookableInterface {
 						</div>
 					</div>
 					<div class="yuniq-ai-header-controls">
+						<button type="button" class="yuniq-ai-ctrl-btn" id="yuniq-ai-reset" hidden
+							aria-label="<?php esc_attr_e( 'شروع گفتگوی تازه', 'yuniq-ai' ); ?>"
+							title="<?php esc_attr_e( 'گفتگوی تازه', 'yuniq-ai' ); ?>">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/></svg>
+						</button>
 						<?php if ( $this->settings->get( 'show_theme_toggle' ) ) : ?>
 							<button type="button" class="yuniq-ai-ctrl-btn" id="yuniq-ai-theme-toggle"
 								aria-label="<?php esc_attr_e( 'تغییر حالت روشن و تاریک', 'yuniq-ai' ); ?>"
@@ -595,6 +697,11 @@ final class Widget implements HookableInterface {
 						<?php if ( $help_sub ) : ?>
 							<p class="yuniq-ai-intro-sub"><?php echo esc_html( $help_sub ); ?></p>
 						<?php endif; ?>
+						<?php // Filled by public.js from the quick actions: the visitor's starting options. ?>
+						<div class="yuniq-ai-options" id="yuniq-ai-options"></div>
+						<?php if ( $hint ) : ?>
+							<p class="yuniq-ai-intro-hint"><?php echo esc_html( $hint ); ?></p>
+						<?php endif; ?>
 					</div>
 
 					<div class="yuniq-ai-messages" id="yuniq-ai-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
@@ -612,12 +719,9 @@ final class Widget implements HookableInterface {
 							<?php esc_html_e( 'صحبت با کارشناس', 'yuniq-ai' ); ?>
 						</button>
 					<?php endif; ?>
-					<div class="yuniq-ai-prompt-ticker" id="yuniq-ai-prompt-ticker">
-						<div class="yuniq-ai-ticker-track" id="yuniq-ai-ticker-track"></div>
-					</div>
 					<form id="yuniq-ai-chat-form" autocomplete="off">
 						<label class="yuniq-ai-sr-only" for="yuniq-ai-input"><?php esc_html_e( 'پیام شما', 'yuniq-ai' ); ?></label>
-						<textarea id="yuniq-ai-input" name="message" rows="1" maxlength="2000"
+						<textarea id="yuniq-ai-input" name="message" rows="1" maxlength="2000" dir="auto" enterkeyhint="send"
 							placeholder="<?php echo esc_attr( '' !== $placeholder ? $placeholder : __( 'سوال خود را اینجا بنویسید...', 'yuniq-ai' ) ); ?>"></textarea>
 						<button type="submit" id="yuniq-ai-send" aria-label="<?php esc_attr_e( 'ارسال پیام', 'yuniq-ai' ); ?>">
 							<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>

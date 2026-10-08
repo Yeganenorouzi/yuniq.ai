@@ -23,7 +23,12 @@ function yuniq_ai_uninstall_site() {
 		'yuniq_ai_settings',
 		'yuniq_ai_db_version',
 		'yuniq_ai_kb_cache_version',
+		'yuniq_ai_error_log',
+		'yuniq_ai_error_unseen',
+		'yuniq_ai_last_success',
 	);
+
+	wp_clear_scheduled_hook( 'yuniq_ai_daily_cleanup' );
 
 	foreach ( $options as $option ) {
 		delete_option( $option );

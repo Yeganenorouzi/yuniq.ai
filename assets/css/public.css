@@ -902,52 +902,6 @@
 	border-top: 1px solid var(--yuniq-ai-border);
 }
 
-/* Suggestion chips.
-   These used to slide on an infinite loop, which meant a visitor had to
-   chase a moving target to click one. They are a plain scrollable row
-   now — swipeable on touch, keyboard reachable, and still. */
-#yuniq-ai-root .yuniq-ai-prompt-ticker {
-	display: flex;
-	gap: 6px;
-	margin-bottom: 8px;
-	overflow-x: auto;
-	overscroll-behavior-inline: contain;
-	scroll-snap-type: x proximity;
-	scrollbar-width: none;
-	-webkit-overflow-scrolling: touch;
-	mask-image: linear-gradient(to left, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
-	-webkit-mask-image: linear-gradient(to left, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
-}
-#yuniq-ai-root .yuniq-ai-prompt-ticker::-webkit-scrollbar { display: none; }
-#yuniq-ai-root .yuniq-ai-prompt-ticker.is-hidden { display: none; }
-
-#yuniq-ai-root .yuniq-ai-ticker-track {
-	display: flex;
-	gap: 6px;
-	width: max-content;
-}
-
-#yuniq-ai-root .yuniq-ai-ticker-chip {
-	flex-shrink: 0;
-	scroll-snap-align: start;
-	padding: 6px 13px;
-	font-size: 12.5px;
-	font-weight: 500;
-	white-space: nowrap;
-	color: var(--yuniq-ai-text-muted);
-	background: var(--yuniq-ai-surface);
-	border: 1px solid var(--yuniq-ai-border);
-	border-radius: 999px;
-	transition: color var(--yuniq-ai-dur-fast) linear,
-		border-color var(--yuniq-ai-dur-fast) linear,
-		background var(--yuniq-ai-dur-fast) linear;
-}
-#yuniq-ai-root .yuniq-ai-ticker-chip:hover {
-	color: var(--yuniq-ai-primary);
-	border-color: var(--yuniq-ai-primary);
-	background: var(--yuniq-ai-primary-soft);
-}
-
 /* Composer */
 #yuniq-ai-root #yuniq-ai-chat-form {
 	display: flex;
@@ -1083,8 +1037,13 @@
 /* Page scroll lock while the sheet is open.
    `touch-action: none` is deliberately not used here: it also killed
    scrolling *inside* the panel on several mobile browsers. */
-body.yuniq-ai-open {
-	overflow: hidden;
+/* Only the full-screen mobile sheet locks the page. On desktop the
+   panel is a small corner popup: locking there froze the whole site and
+   made it jump sideways as the scrollbar disappeared. */
+@media (max-width: 640px) {
+	body.yuniq-ai-open {
+		overflow: hidden;
+	}
 }
 
 /* =========================================================
@@ -1109,7 +1068,8 @@ body.yuniq-ai-open {
 @media (forced-colors: active) {
 	#yuniq-ai-root .yuniq-ai-panel,
 	#yuniq-ai-root .yuniq-ai-msg,
-	#yuniq-ai-root .yuniq-ai-ticker-chip {
+	#yuniq-ai-root .yuniq-ai-option,
+	#yuniq-ai-root .yuniq-ai-reply {
 		border: 1px solid CanvasText;
 	}
 }
@@ -1313,4 +1273,152 @@ body.yuniq-ai-open {
 }
 #yuniq-ai-root.yuniq-ai-page-mode .yuniq-ai-ctrl-btn#yuniq-ai-panel-close {
 	display: none;
+}
+
+/* =========================================================
+   1.3 — starter options, follow-up replies, small fixes
+   ========================================================= */
+
+/* `hidden` must win over the display values set on these elements. */
+#yuniq-ai-root [hidden] {
+	display: none !important;
+}
+
+/* The intro scrolls on short screens instead of pushing the composer out. */
+#yuniq-ai-root .yuniq-ai-intro {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
+
+/* Starter options: the admin's quick actions as pickable cards. */
+#yuniq-ai-root .yuniq-ai-options {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	margin-top: 16px;
+	text-align: right;
+}
+#yuniq-ai-root .yuniq-ai-option {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-height: 54px;
+	padding: 10px 12px;
+	text-align: right;
+	text-decoration: none;
+	line-height: 1.5;
+	color: var(--yuniq-ai-text);
+	background: var(--yuniq-ai-surface);
+	border: 1px solid var(--yuniq-ai-border);
+	border-radius: 12px;
+	box-shadow: var(--yuniq-ai-shadow-sm);
+	cursor: pointer;
+	transition: border-color var(--yuniq-ai-dur-fast) linear,
+		background var(--yuniq-ai-dur-fast) linear,
+		transform var(--yuniq-ai-dur-fast) var(--yuniq-ai-ease);
+}
+#yuniq-ai-root .yuniq-ai-option:hover {
+	border-color: var(--yuniq-ai-primary);
+	background: var(--yuniq-ai-primary-soft);
+	transform: translateY(-1px);
+}
+#yuniq-ai-root .yuniq-ai-option:active {
+	transform: translateY(0);
+}
+#yuniq-ai-root .yuniq-ai-option-title {
+	font-size: 13px;
+	font-weight: 600;
+}
+#yuniq-ai-root .yuniq-ai-option-desc {
+	font-size: 11.5px;
+	color: var(--yuniq-ai-text-muted);
+}
+/* A lone last card spans the row instead of leaving a hole. */
+#yuniq-ai-root .yuniq-ai-option:last-child:nth-child(odd) {
+	grid-column: 1 / -1;
+}
+#yuniq-ai-root .yuniq-ai-intro-hint {
+	margin: 12px 0 0;
+	font-size: 11.5px;
+	color: var(--yuniq-ai-text-faint);
+	line-height: 1.6;
+}
+
+/* Follow-up options the assistant offers under its reply. */
+#yuniq-ai-root .yuniq-ai-replies {
+	align-self: flex-end;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 6px;
+	max-width: 94%;
+}
+#yuniq-ai-root .yuniq-ai-reply {
+	padding: 7px 13px;
+	font-size: 12.5px;
+	font-weight: 500;
+	line-height: 1.5;
+	color: var(--yuniq-ai-primary);
+	background: var(--yuniq-ai-surface);
+	border: 1px solid var(--yuniq-ai-primary-ring);
+	border-radius: 999px;
+	transition: background var(--yuniq-ai-dur-fast) linear,
+		border-color var(--yuniq-ai-dur-fast) linear;
+}
+#yuniq-ai-root .yuniq-ai-reply:hover {
+	background: var(--yuniq-ai-primary-soft);
+	border-color: var(--yuniq-ai-primary);
+}
+
+/* A conversation with a human cannot be reset from under the agent. */
+#yuniq-ai-root.is-with-agent #yuniq-ai-reset {
+	display: none;
+}
+#yuniq-ai-root .yuniq-ai-human-btn:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+/* Lead form feedback stays inside the form. */
+#yuniq-ai-root .yuniq-ai-inline-form-error:empty {
+	display: none;
+}
+#yuniq-ai-root .yuniq-ai-inline-form-error {
+	margin-bottom: 8px;
+	font-size: 12px;
+	color: var(--yuniq-ai-danger-text);
+}
+#yuniq-ai-root .yuniq-ai-inline-form-done {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--yuniq-ai-online);
+}
+
+@media (max-width: 640px) {
+	/* 16px keeps iOS Safari from zooming the page on focus. */
+	#yuniq-ai-root .yuniq-ai-inline-form-row input,
+	#yuniq-ai-root .yuniq-ai-inline-form-row textarea {
+		font-size: 16px;
+	}
+}
+@media (max-width: 340px) {
+	#yuniq-ai-root .yuniq-ai-options {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* The widget is right-to-left: "send" travels toward the left, so the
+   paper plane is mirrored to point the way the message goes. */
+#yuniq-ai-root #yuniq-ai-send svg {
+	transform: scaleX(-1);
+}
+
+/* The field follows the language being typed (dir="auto"), which makes an
+   empty field left-to-right and put the placeholder's «...» on the wrong
+   side. While only the placeholder shows, it is laid out right-to-left. */
+#yuniq-ai-root #yuniq-ai-input:placeholder-shown {
+	direction: rtl;
+	text-align: right;
 }

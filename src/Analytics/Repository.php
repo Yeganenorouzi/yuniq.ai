@@ -51,13 +51,18 @@ final class Repository {
 			array(
 				'session_id'    => sanitize_text_field( $session_id ),
 				'user_question' => sanitize_textarea_field( $user_question ),
-				'ai_response'   => wp_kses_post( $ai_response ),
+				'ai_response'   => sanitize_textarea_field( $ai_response ),
 				'topics'        => isset( $extra['topics'] ) ? sanitize_text_field( $extra['topics'] ) : '',
 				'response_time' => isset( $extra['response_time'] ) ? (float) $extra['response_time'] : 0,
 				'tokens_used'   => isset( $extra['tokens_used'] ) ? (int) $extra['tokens_used'] : 0,
+				'created_at'    => current_time( 'mysql' ),
 			),
-			array( '%s', '%s', '%s', '%s', '%f', '%d' )
+			array( '%s', '%s', '%s', '%s', '%f', '%d', '%s' )
 		);
+
+		if ( ! $wpdb->insert_id ) {
+			\Yuniq\Ai\Support\Logger::db( 'ثبت گفتگو در آمار انجام نشد.' );
+		}
 
 		return $wpdb->insert_id ? (int) $wpdb->insert_id : false;
 	}

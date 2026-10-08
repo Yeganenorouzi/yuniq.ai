@@ -39,6 +39,13 @@ final class LiveSupportController implements HookableInterface {
 	const ESCALATE_LIMIT = 5;
 
 	/**
+	 * Escalations and lead submissions allowed per IP inside the window.
+	 * Each one sends an email or Telegram message, so this is what stops
+	 * the endpoints being used to flood the site owner's inbox.
+	 */
+	const IP_LIMIT = 10;
+
+	/**
 	 * Rate limit window, in seconds.
 	 */
 	const RATE_WINDOW = 600;
@@ -145,7 +152,7 @@ final class LiveSupportController implements HookableInterface {
 				'permission_callback' => '__return_true',
 				'args'                => array(
 					'session_id' => array(
-						'required'          => true,
+						'required'          => false,
 						'type'              => 'string',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
@@ -205,13 +212,28 @@ final class LiveSupportController implements HookableInterface {
 			return $this->error( __( 'پشتیبانی زنده در حال حاضر فعال نیست.', 'yuniq-ai' ), 403 );
 		}
 
-		$session_id = (string) $request->get_param( 'session_id' );
+		$session_id = Text::session_id( $request->get_param( 'session_id' ) );
 
 		if ( '' === $session_id ) {
 			return $this->error( __( 'شناسه گفتگو نامعتبر است.', 'yuniq-ai' ), 400 );
 		}
 
-		if ( $this->rate_limiter->hit( 'handoff:' . $session_id, self::ESCALATE_LIMIT, self::RATE_WINDOW ) ) {
+		$existing = $this->live_support->get_conversation( $session_id );
+
+		// Already waiting for, or talking to, an agent: nothing new to do,
+		// and certainly no second notification to send.
+		if ( $existing && in_array( $existing['status'], array( 'pending', 'active' ), true ) ) {
+			return new WP_REST_Response(
+				array(
+					'success'    => true,
+					'status'     => $existing['status'],
+					'agent_name' => $this->settings->get( 'agent_display_name' ),
+				),
+				200
+			);
+		}
+
+		if ( $this->rate_limiter->hit( 'handoff:' . $session_id, self::ESCALATE_LIMIT, self::RATE_WINDOW ) || $this->ip_limited( 'handoff-ip:' ) ) {
 			return $this->error( __( 'تعداد درخواست‌ها زیاد است. لطفاً کمی صبر کنید.', 'yuniq-ai' ), 429 );
 		}
 
@@ -220,6 +242,10 @@ final class LiveSupportController implements HookableInterface {
 			(string) $request->get_param( 'name' ),
 			(string) $request->get_param( 'contact' )
 		);
+
+		if ( ! $conversation ) {
+			return $this->error( __( 'ثبت درخواست ممکن نشد. لطفاً دوباره تلاش کنید.', 'yuniq-ai' ), 500 );
+		}
 
 		$this->notifier->notify_new_escalation( $conversation );
 
@@ -240,9 +266,13 @@ final class LiveSupportController implements HookableInterface {
 	 * @return WP_REST_Response
 	 */
 	public function handle_lead( WP_REST_Request $request ) {
-		$session_id = (string) $request->get_param( 'session_id' );
+		$session_id = Text::session_id( $request->get_param( 'session_id' ) );
 		$form_key   = (string) $request->get_param( 'form_key' );
 		$submitted  = (array) $request->get_param( 'fields' );
+
+		if ( ! $this->settings->get( 'enabled' ) ) {
+			return $this->error( __( 'دستیار هوشمند در حال حاضر غیرفعال است.', 'yuniq-ai' ), 403 );
+		}
 
 		$form = $this->find_form( $form_key );
 
@@ -250,10 +280,13 @@ final class LiveSupportController implements HookableInterface {
 			return $this->error( __( 'فرم موردنظر یافت نشد.', 'yuniq-ai' ), 404 );
 		}
 
+		// Keyed by the label the admin wrote, so the inbox and the
+		// notification read «نام شما: …» instead of an internal field name.
 		$fields = array();
 
 		foreach ( $form['fields'] as $field ) {
-			$value = isset( $submitted[ $field['name'] ] ) ? trim( (string) $submitted[ $field['name'] ] ) : '';
+			$raw   = isset( $submitted[ $field['name'] ] ) && is_scalar( $submitted[ $field['name'] ] ) ? (string) $submitted[ $field['name'] ] : '';
+			$value = Text::truncate( trim( 'textarea' === $field['type'] ? sanitize_textarea_field( $raw ) : sanitize_text_field( $raw ) ), 1000, '' );
 
 			if ( ! empty( $field['required'] ) && '' === $value ) {
 				return $this->error(
@@ -263,14 +296,34 @@ final class LiveSupportController implements HookableInterface {
 				);
 			}
 
-			$fields[ $field['name'] ] = 'email' === $field['type'] ? sanitize_email( $value ) : sanitize_text_field( $value );
+			if ( '' !== $value && 'email' === $field['type'] && ! is_email( $value ) ) {
+				return $this->error( __( 'نشانی ایمیل درست نیست.', 'yuniq-ai' ), 400 );
+			}
+
+			if ( '' !== $value && 'tel' === $field['type'] ) {
+				$value = Text::latin_digits( $value );
+
+				if ( ! preg_match( '/^\+?[0-9\s\-()]{5,20}$/', $value ) ) {
+					return $this->error( __( 'شماره تماس درست نیست.', 'yuniq-ai' ), 400 );
+				}
+			}
+
+			$fields[ $field['label'] ] = $value;
 		}
 
-		$this->leads->insert( $session_id, $form_key, $fields );
+		if ( $this->ip_limited( 'lead-ip:' ) ) {
+			return $this->error( __( 'تعداد درخواست‌ها زیاد است. لطفاً کمی صبر کنید.', 'yuniq-ai' ), 429 );
+		}
+
+		if ( ! $this->leads->insert( $session_id, $form_key, $fields ) ) {
+			return $this->error( __( 'ثبت درخواست ممکن نشد. لطفاً دوباره تلاش کنید.', 'yuniq-ai' ), 500 );
+		}
+
 		$this->notifier->notify_new_lead(
 			array(
 				'session_id' => $session_id,
 				'form_key'   => $form_key,
+				'form_title' => isset( $form['title'] ) ? $form['title'] : '',
 				'fields'     => $fields,
 			)
 		);
@@ -285,7 +338,7 @@ final class LiveSupportController implements HookableInterface {
 	 * @return WP_REST_Response
 	 */
 	public function handle_get_messages( WP_REST_Request $request ) {
-		$session_id = (string) $request->get_param( 'session_id' );
+		$session_id = Text::session_id( $request->get_param( 'session_id' ) );
 		$after_id   = absint( $request->get_param( 'after_id' ) );
 
 		$conversation = $this->live_support->get_conversation( $session_id );
@@ -313,7 +366,7 @@ final class LiveSupportController implements HookableInterface {
 	 * @return WP_REST_Response
 	 */
 	public function handle_post_message( WP_REST_Request $request ) {
-		$session_id = (string) $request->get_param( 'session_id' );
+		$session_id = Text::session_id( $request->get_param( 'session_id' ) );
 		$message    = (string) $request->get_param( 'message' );
 
 		if ( '' === trim( $message ) || Text::length( $message ) > self::MAX_MESSAGE_LENGTH ) {
@@ -333,6 +386,18 @@ final class LiveSupportController implements HookableInterface {
 		$this->live_support->add_message( $session_id, 'user', $message );
 
 		return new WP_REST_Response( array( 'success' => true ), 200 );
+	}
+
+	/**
+	 * Count one notifying request against the caller's IP.
+	 *
+	 * @param string $bucket Bucket prefix.
+	 * @return bool True when the caller is over the limit.
+	 */
+	private function ip_limited( $bucket ) {
+		$ip = RateLimiter::client_ip( (string) $this->settings->get( 'ip_source', 'remote_addr' ) );
+
+		return '' !== $ip && $this->rate_limiter->hit( $bucket . $ip, self::IP_LIMIT, self::RATE_WINDOW );
 	}
 
 	/**

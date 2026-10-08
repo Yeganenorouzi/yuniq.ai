@@ -36,6 +36,11 @@ final class Settings {
 	const SECRET_MASK = '__YUNIQ_AI_UNCHANGED__';
 
 	/**
+	 * Settings stored encrypted (see {@see Support\Secret}).
+	 */
+	const SECRET_KEYS = array( 'api_key', 'telegram_bot_token' );
+
+	/**
 	 * Cached option array for this request.
 	 *
 	 * @var array|null
@@ -60,7 +65,14 @@ final class Settings {
 			'model'                 => 'gpt-4o-mini',
 			'temperature'           => 0.7,
 			'max_tokens'            => 1024,
-			'system_prompt'         => 'تو دستیار هوشمند رسمی این وب‌سایت هستی. همیشه اول از پایگاه دانش وب‌سایت استفاده کن. لینک صفحه را فقط وقتی بده که کاربر صریحاً درخواست لینک کرده باشد (مثلاً «لینک بده»). در پاسخ‌های عادی لینک نفرست. پاسخ‌ها را کوتاه، مؤدب و به زبان کاربر بنویس.',
+			'system_prompt'         => 'تو دستیار هوشمند رسمی این وب‌سایت هستی. همیشه اول از پایگاه دانش وب‌سایت استفاده کن و مؤدب و دقیق پاسخ بده.',
+			'reply_tone'            => 'friendly',
+			'reply_length'          => 'short',
+			'reply_language'        => 'auto',
+			'links_policy'          => 'on_request',
+			'suggest_options'       => true,
+			'suggest_mode'          => 'smart',
+			'starter_mode'          => 'auto',
 			'history_limit'         => 6,
 			'context_documents'     => 5,
 			'request_timeout'       => 60,
@@ -75,8 +87,21 @@ final class Settings {
 			'wc_products'           => true,
 			'wc_product_categories' => true,
 			'wc_product_tags'       => true,
-			'wc_attributes'         => false,
+			'wc_attributes'         => true,
+			'wc_variations'         => true,
+			'wc_short_desc'         => true,
+			'wc_price'              => true,
+			'wc_stock'              => true,
+			'wc_sku'                => true,
+			'wc_dimensions'         => false,
 			'wc_reviews'            => false,
+			'wc_skip_outofstock'    => false,
+			'wc_skip_hidden'        => true,
+			'index_custom_fields'   => false,
+			'site_profile'          => true,
+			'context_detail'        => 'normal',
+			'business_info'         => '',
+			'synonyms'              => '',
 			'wp_pages'              => true,
 			'wp_posts'              => true,
 			'wp_categories'         => true,
@@ -194,6 +219,12 @@ final class Settings {
 			'full_page_enabled'     => false,
 			'full_page_slug'        => 'ai-assistant',
 
+			// Security and privacy.
+			'ip_source'             => 'remote_addr',
+			'rate_profile'          => 'balanced',
+			'daily_limit'           => '0',
+			'data_retention'        => '0',
+
 			// General.
 			'enabled'               => true,
 		);
@@ -208,6 +239,12 @@ final class Settings {
 		if ( null === $this->cache ) {
 			$stored      = get_option( self::OPTION_KEY, array() );
 			$this->cache = wp_parse_args( is_array( $stored ) ? $stored : array(), self::defaults() );
+
+			// Credentials are encrypted at rest; everything that reads the
+			// settings gets the usable value.
+			foreach ( self::SECRET_KEYS as $secret ) {
+				$this->cache[ $secret ] = Support\Secret::decrypt( $this->cache[ $secret ] );
+			}
 		}
 
 		return $this->cache;
@@ -238,14 +275,17 @@ final class Settings {
 	/**
 	 * Sanitize submitted settings.
 	 *
-	 * Runs as the `sanitize_callback` for `register_setting()`, so the
-	 * input is unslashed here before any sanitizer touches it.
+	 * Runs as the `sanitize_callback` for `register_setting()`; the values
+	 * arrive already unslashed.
 	 *
 	 * @param mixed $input Raw submitted values.
 	 * @return array
 	 */
 	public function sanitize( $input ) {
-		$input    = is_array( $input ) ? wp_unslash( $input ) : array();
+		// options.php has already unslashed the submitted values. Unslashing
+		// again here ate every backslash in the custom CSS and the prompt
+		// (`content: "\201C"` came back as `content: "201C"`).
+		$input    = is_array( $input ) ? $input : array();
 		$existing = get_option( self::OPTION_KEY, array() );
 		$output   = wp_parse_args( is_array( $existing ) ? $existing : array(), self::defaults() );
 
@@ -256,7 +296,7 @@ final class Settings {
 		// The key is only replaced when the form actually carried a new one.
 		if ( isset( $input['api_key'] ) ) {
 			$submitted_key = trim( sanitize_text_field( $input['api_key'] ) );
-			if ( self::SECRET_MASK !== $submitted_key ) {
+			if ( self::SECRET_MASK !== $submitted_key && ! Support\Secret::is_encrypted( $submitted_key ) ) {
 				$output['api_key'] = $submitted_key;
 			}
 		}
@@ -268,6 +308,14 @@ final class Settings {
 		$output['temperature']   = isset( $input['temperature'] ) ? min( 2.0, max( 0.0, (float) $input['temperature'] ) ) : 0.7;
 		$output['max_tokens']    = isset( $input['max_tokens'] ) ? min( 8192, max( 64, absint( $input['max_tokens'] ) ) ) : 1024;
 		$output['system_prompt'] = isset( $input['system_prompt'] ) ? sanitize_textarea_field( $input['system_prompt'] ) : '';
+
+		$output['reply_tone']      = self::pick( $input, 'reply_tone', array_keys( self::choices( 'reply_tone' ) ), 'friendly' );
+		$output['reply_length']    = self::pick( $input, 'reply_length', array_keys( self::choices( 'reply_length' ) ), 'short' );
+		$output['reply_language']  = self::pick( $input, 'reply_language', array_keys( self::choices( 'reply_language' ) ), 'auto' );
+		$output['links_policy']    = self::pick( $input, 'links_policy', array_keys( self::choices( 'links_policy' ) ), 'on_request' );
+		$output['starter_mode']    = self::pick( $input, 'starter_mode', array_keys( self::choices( 'starter_mode' ) ), 'auto' );
+		$output['suggest_mode']    = self::pick( $input, 'suggest_mode', array_keys( self::choices( 'suggest_mode' ) ), 'smart' );
+		$output['suggest_options'] = 'off' !== $output['suggest_mode'];
 
 		$output['history_limit']     = self::clamp_int( $input, 'history_limit', 0, 20, 6 );
 		$output['context_documents'] = self::clamp_int( $input, 'context_documents', 1, 12, 5 );
@@ -282,7 +330,17 @@ final class Settings {
 			'wc_products',
 			'wc_product_tags',
 			'wc_attributes',
+			'wc_variations',
+			'wc_short_desc',
+			'wc_price',
+			'wc_stock',
+			'wc_sku',
+			'wc_dimensions',
 			'wc_reviews',
+			'wc_skip_outofstock',
+			'wc_skip_hidden',
+			'index_custom_fields',
+			'site_profile',
 			'wp_pages',
 			'wp_posts',
 			'wp_categories',
@@ -298,6 +356,10 @@ final class Settings {
 			: array();
 
 		$output['content_types'] = $this->derive_content_types( $output );
+
+		$output['context_detail'] = self::pick( $input, 'context_detail', array_keys( self::choices( 'context_detail' ) ), 'normal' );
+		$output['business_info']  = isset( $input['business_info'] ) ? Support\Text::truncate( sanitize_textarea_field( $input['business_info'] ), 4000, '' ) : '';
+		$output['synonyms']       = isset( $input['synonyms'] ) ? Support\Text::truncate( sanitize_textarea_field( $input['synonyms'] ), 4000, '' ) : '';
 
 		// --- Presentation -----------------------------------------------------
 		$text_fields = array(
@@ -367,8 +429,12 @@ final class Settings {
 			$output['custom_css'] = str_ireplace( '</style', '', $css );
 		}
 
+		// The form always sends `quick_actions_present`, so removing every
+		// card is saved as "no cards" instead of silently keeping the old ones.
 		if ( isset( $input['quick_actions'] ) && is_array( $input['quick_actions'] ) ) {
 			$output['quick_actions'] = $this->sanitize_quick_actions( $input['quick_actions'] );
+		} elseif ( ! empty( $input['quick_actions_present'] ) ) {
+			$output['quick_actions'] = array();
 		}
 
 		// --- Live support (human handoff) --------------------------------------
@@ -385,13 +451,12 @@ final class Settings {
 			? array_values( array_intersect( array_map( 'sanitize_key', $input['notify_channels'] ), array( 'email', 'telegram' ) ) )
 			: array();
 
-		$output['notify_email'] = isset( $input['notify_email'] ) && $input['notify_email']
-			? sanitize_email( $input['notify_email'] )
-			: get_option( 'admin_email' );
+		$notify_email           = isset( $input['notify_email'] ) ? sanitize_email( $input['notify_email'] ) : '';
+		$output['notify_email'] = $notify_email ? $notify_email : get_option( 'admin_email' );
 
 		if ( isset( $input['telegram_bot_token'] ) ) {
 			$submitted_token = trim( sanitize_text_field( $input['telegram_bot_token'] ) );
-			if ( self::SECRET_MASK !== $submitted_token ) {
+			if ( self::SECRET_MASK !== $submitted_token && ! Support\Secret::is_encrypted( $submitted_token ) ) {
 				$output['telegram_bot_token'] = $submitted_token;
 			}
 		}
@@ -408,6 +473,18 @@ final class Settings {
 		$full_page_slug              = isset( $input['full_page_slug'] ) ? sanitize_title( $input['full_page_slug'] ) : '';
 		$output['full_page_slug']    = $full_page_slug ? $full_page_slug : 'ai-assistant';
 
+		// --- Security and privacy ---------------------------------------------
+		foreach ( array( 'ip_source' => 'remote_addr', 'rate_profile' => 'balanced', 'daily_limit' => '0', 'data_retention' => '0' ) as $choice_key => $choice_default ) {
+			$submitted             = isset( $input[ $choice_key ] ) && is_scalar( $input[ $choice_key ] ) ? (string) $input[ $choice_key ] : '';
+			$output[ $choice_key ] = array_key_exists( $submitted, self::choices( $choice_key ) ) ? $submitted : $choice_default;
+		}
+
+		// Whatever path a credential took to get here (new value, kept value,
+		// or a plain-text one saved by an older version), it leaves encrypted.
+		foreach ( self::SECRET_KEYS as $secret ) {
+			$output[ $secret ] = Support\Secret::encrypt( isset( $output[ $secret ] ) ? (string) $output[ $secret ] : '' );
+		}
+
 		// Empty colors fall back rather than being stored as ''.
 		if ( ! $output['primary_color'] ) {
 			$output['primary_color'] = '#263DFF';
@@ -419,6 +496,79 @@ final class Settings {
 		$this->flush();
 
 		return $output;
+	}
+
+	/**
+	 * The fixed-choice settings and their labels: one list shared by the
+	 * settings screen (which draws the option cards from it) and the
+	 * sanitizer (which accepts nothing else).
+	 *
+	 * @param string $key Setting name.
+	 * @return array<string,array{0:string,1:string}> Value => [label, hint].
+	 */
+	public static function choices( $key ) {
+		$choices = array(
+			'reply_tone'     => array(
+				'friendly' => array( 'دوستانه', 'گرم و صمیمی، مثل یک همکار خوش‌برخورد' ),
+				'formal'   => array( 'رسمی', 'محترمانه و دقیق، مناسب سازمان‌ها' ),
+				'sales'    => array( 'فروشنده', 'پرانرژی؛ مزیت‌ها را می‌گوید و به خرید راهنمایی می‌کند' ),
+				'expert'   => array( 'کارشناس', 'تخصصی و دقیق، مثل یک مشاور فنی' ),
+			),
+			'reply_length'   => array(
+				'short'    => array( 'کوتاه', '۱ تا ۳ جمله؛ سریع‌ترین و کم‌هزینه‌ترین' ),
+				'medium'   => array( 'متوسط', 'یک پاراگراف کوتاه' ),
+				'detailed' => array( 'کامل', 'توضیح مفصل با جزئیات' ),
+			),
+			'reply_language' => array(
+				'auto' => array( 'زبان بازدیدکننده', 'به هر زبانی بپرسد، همان‌طور پاسخ می‌دهد' ),
+				'fa'   => array( 'همیشه فارسی', 'حتی اگر به زبان دیگری بپرسد' ),
+				'en'   => array( 'همیشه انگلیسی', 'برای سایت‌های انگلیسی‌زبان' ),
+			),
+			'links_policy'   => array(
+				'on_request' => array( 'فقط وقتی بخواهد', 'لینک فقط با درخواست صریح بازدیدکننده' ),
+				'helpful'    => array( 'هر جا مفید بود', 'لینک صفحه مرتبط را خودش پیشنهاد می‌دهد' ),
+			),
+			'starter_mode'   => array(
+				'auto'   => array( 'خودکار از سایت', 'دسته‌های اصلی محصولات، ارسال و مرجوعی، پیگیری سفارش، مشاوره و کارشناس (پیشنهادی)' ),
+				'manual' => array( 'دستی', 'فقط گزینه‌هایی که خودتان در پایین تعریف می‌کنید' ),
+				'off'    => array( 'بدون گزینه', 'فقط کادر پیام نمایش داده شود' ),
+			),
+			'suggest_mode'   => array(
+				'smart'   => array( 'هوشمند', 'انتخاب بین گزینه‌ها + قدم بعدی مرتبط (رنگ، قیمت، ارسال…)' ),
+				'choices' => array( 'فقط هنگام انتخاب', 'فقط وقتی چند محصول یا مدل معرفی شده و باید یکی انتخاب شود' ),
+				'off'     => array( 'خاموش', 'هیچ دکمه‌ای زیر پاسخ‌ها نمایش داده نشود' ),
+			),
+			'context_detail' => array(
+				'compact' => array( 'خلاصه', 'کم‌هزینه‌ترین؛ برای صفحات کوتاه' ),
+				'normal'  => array( 'معمولی', 'تعادل دقت و هزینه (پیشنهادی)' ),
+				'full'    => array( 'کامل', 'متن بلند هر صفحه؛ دقیق‌تر ولی گران‌تر' ),
+			),
+			'rate_profile'   => array(
+				'strict'   => array( 'سخت‌گیرانه', 'هر بازدیدکننده ۱۰ پیام در ۱۰ دقیقه؛ کمترین هزینه' ),
+				'balanced' => array( 'متعادل', 'هر بازدیدکننده ۲۰ پیام در ۱۰ دقیقه (پیشنهادی)' ),
+				'relaxed'  => array( 'آزاد', 'هر بازدیدکننده ۴۰ پیام در ۱۰ دقیقه' ),
+			),
+			'daily_limit'    => array(
+				'0'     => array( 'بدون سقف', 'فقط محدودیت هر بازدیدکننده اعمال می‌شود' ),
+				'200'   => array( '۲۰۰ پیام در روز', 'سایت کوچک یا دوره آزمایشی' ),
+				'1000'  => array( '۱٬۰۰۰ پیام در روز', 'سایت متوسط' ),
+				'5000'  => array( '۵٬۰۰۰ پیام در روز', 'سایت پربازدید' ),
+			),
+			'ip_source'      => array(
+				'remote_addr' => array( 'اتصال مستقیم', 'سایت پشت CDN نیست (پیش‌فرض و امن‌ترین)' ),
+				'cloudflare'  => array( 'کلودفلر', 'سایت از Cloudflare عبور می‌کند' ),
+				'forwarded'   => array( 'CDN / پراکسی دیگر', 'آروان‌کلاود و مشابه (X-Forwarded-For)' ),
+				'real_ip'     => array( 'Nginx پراکسی', 'هدر X-Real-IP' ),
+			),
+			'data_retention' => array(
+				'0'   => array( 'همیشه نگه دار', 'چیزی خودکار پاک نمی‌شود' ),
+				'30'  => array( '۳۰ روز', 'بیشترین حفظ حریم خصوصی' ),
+				'90'  => array( '۹۰ روز', 'متعادل' ),
+				'365' => array( 'یک سال', 'برای تحلیل بلندمدت' ),
+			),
+		);
+
+		return isset( $choices[ $key ] ) ? $choices[ $key ] : array();
 	}
 
 	/**

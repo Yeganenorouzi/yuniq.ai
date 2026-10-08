@@ -48,7 +48,7 @@ $type_labels = array(
 			<span class="stat-value" id="yuniq-ai-crawl-status">
 				<?php
 				if ( $status && isset( $status['status'] ) ) {
-					$map = array( 'running' => 'در حال اجرا', 'completed' => 'تکمیل‌شده', 'pending' => 'در انتظار', 'failed' => 'ناموفق' );
+					$map = array( 'running' => 'در حال اجرا', 'completed' => 'تکمیل‌شده', 'pending' => 'در انتظار', 'failed' => 'ناموفق', 'stopped' => 'متوقف‌شده' );
 					echo esc_html( isset( $map[ $status['status'] ] ) ? $map[ $status['status'] ] : $status['status'] );
 				} else {
 					echo 'هرگز اجرا نشده';
@@ -60,7 +60,7 @@ $type_labels = array(
 	</div>
 
 	<?php if ( $status && ! empty( $status['finished_at'] ) ) : ?>
-	<p style="color:#64748b;margin:-8px 0 20px;">آخرین کرال: <strong><?php echo esc_html( $status['finished_at'] ); ?></strong>
+	<p style="color:#64748b;margin:-8px 0 20px;">آخرین کرال: <strong><?php echo esc_html( \Yuniq\Ai\Support\Text::human_date( $status['finished_at'] ) ); ?></strong>
 		<?php if ( ! empty( $status['processed_items'] ) ) : ?>
 			— <?php echo esc_html( number_format_i18n( $status['processed_items'] ) ); ?> آیتم
 		<?php endif; ?>
@@ -72,7 +72,7 @@ $type_labels = array(
 
 	<div class="yuniq-ai-card">
 		<h2>اجرای کرال</h2>
-		<p>بر اساس تیک‌های تب «خزنده محتوا» در تنظیمات، صفحات را ایندکس می‌کند و لیست زیر را به‌روز می‌کند.</p>
+		<p>بر اساس تیک‌های تب «خزنده محتوا» در تنظیمات، صفحات را ایندکس می‌کند و لیست زیر را به‌روز می‌کند. پس از اولین ایندکس، هر نوشته، برگه یا محصولی که ذخیره، ویرایش یا حذف کنید خودکار در پایگاه دانش به‌روز می‌شود.</p>
 		<p class="description">ایندکس به صورت دسته‌ای و پشت سر هم اجرا می‌شود، بنابراین روی سایت‌های بزرگ هم قطع نمی‌شود. می‌توانید هر لحظه آن را متوقف کنید.</p>
 		<p>
 			<button type="button" class="button button-primary button-hero" id="yuniq-ai-start-crawl">شروع ایندکس‌گذاری</button>
@@ -94,7 +94,7 @@ $type_labels = array(
 		<?php if ( empty( $recent ) ) : ?>
 			<p>هنوز چیزی ایندکس نشده. نوع محتوا را در تنظیمات انتخاب کنید و «شروع ایندکس‌گذاری» را بزنید.</p>
 		<?php else : ?>
-			<table class="widefat striped">
+			<div class="yuniq-ai-table-scroll"><table class="widefat striped">
 				<thead>
 					<tr>
 						<th style="width:40px;">#</th>
@@ -112,7 +112,7 @@ $type_labels = array(
 						$label = isset( $type_labels[ $ptype ] ) ? $type_labels[ $ptype ] : $ptype;
 						?>
 						<tr>
-							<td><?php echo esc_html( $i++ ); ?></td>
+							<td><?php echo esc_html( number_format_i18n( $i++ ) ); ?></td>
 							<td><strong><?php echo esc_html( $item['title'] ); ?></strong></td>
 							<td><span class="yuniq-ai-type-badge"><?php echo esc_html( $label ); ?></span></td>
 							<td>
@@ -122,13 +122,13 @@ $type_labels = array(
 									—
 								<?php endif; ?>
 							</td>
-							<td><?php echo esc_html( $item['indexed_at'] ); ?></td>
+							<td><?php echo esc_html( \Yuniq\Ai\Support\Text::human_date( $item['indexed_at'] ) ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
-			</table>
+			</table></div>
 			<?php if ( $count > count( $recent ) ) : ?>
-				<p class="description" style="margin-top:12px;">نمایش <?php echo esc_html( count( $recent ) ); ?> مورد از <?php echo esc_html( number_format_i18n( $count ) ); ?> — برای دیدن همه، کرال را دوباره اجرا کنید یا تعداد را در کد افزایش دهید.</p>
+				<p class="description" style="margin-top:12px;">نمایش <?php echo esc_html( number_format_i18n( count( $recent ) ) ); ?> مورد از <?php echo esc_html( number_format_i18n( $count ) ); ?> (جدیدترین‌ها). همه موارد در پایگاه دانش هستند و دستیار از آن‌ها استفاده می‌کند.</p>
 			<?php endif; ?>
 		<?php endif; ?>
 	</div>

@@ -10,6 +10,7 @@ namespace Yuniq\Ai\Kb;
 
 use Yuniq\Ai\Settings;
 use Yuniq\Ai\Setup\Schema;
+use Yuniq\Ai\Support\Logger;
 use WP_Post;
 use WP_Query;
 
@@ -31,6 +32,12 @@ final class Indexer {
 	 * Items handled per batch when the caller does not say.
 	 */
 	const DEFAULT_BATCH_SIZE = 20;
+
+	/**
+	 * Variations read per product. A product with hundreds of
+	 * combinations would otherwise swamp the model's context.
+	 */
+	const MAX_VARIATIONS = 40;
 
 	/**
 	 * Crawl phases, in order.
@@ -176,6 +183,50 @@ final class Indexer {
 	}
 
 	/**
+	 * Keep one post's document in step with the post itself, so a new or
+	 * edited product does not wait for the next full crawl.
+	 *
+	 * @param int $post_id Post id.
+	 * @return void
+	 */
+	public function sync_post( $post_id ) {
+		$post = get_post( $post_id );
+
+		if ( ! $post || ! in_array( $post->post_type, $this->resolve_content_types(), true ) ) {
+			return;
+		}
+
+		$include = $this->parse_slug_list( $this->settings->get( 'include_slugs', '' ) );
+		$exclude = $this->parse_slug_list( $this->settings->get( 'exclude_slugs', '' ) );
+
+		if ( 'publish' !== $post->post_status || '' !== $post->post_password || ! $this->passes_slug_filters( get_permalink( $post ), $include, $exclude ) ) {
+			$this->repository->delete_by_post_id( $post->ID );
+
+			return;
+		}
+
+		try {
+			$this->index_post( $post );
+		} catch ( \Throwable $e ) {
+			Logger::error( 'crawl', sprintf( 'به‌روزرسانی خودکار «%s» در پایگاه دانش انجام نشد.', $post->post_title ), array( 'error' => $e->getMessage() ) );
+
+			return;
+		}
+
+		$this->repository->flush_cache();
+	}
+
+	/**
+	 * Drop a post's document, e.g. when it is trashed or deleted.
+	 *
+	 * @param int $post_id Post id.
+	 * @return void
+	 */
+	public function forget_post( $post_id ) {
+		$this->repository->delete_by_post_id( $post_id );
+	}
+
+	/**
 	 * Mark a running crawl as stopped.
 	 *
 	 * @param int $log_id Crawl log row id.
@@ -223,6 +274,7 @@ final class Indexer {
 			array(
 				'post_type'              => $this->resolve_content_types(),
 				'post_status'            => 'publish',
+				'has_password'           => false,
 				'posts_per_page'         => $limit,
 				'offset'                 => $offset,
 				'orderby'                => 'ID',
@@ -241,8 +293,23 @@ final class Indexer {
 				continue;
 			}
 
-			$this->index_post( $post );
-			$indexed++;
+			// A shortcode or page-builder block that throws while rendering
+			// used to kill the request, and the crawl then retried the same
+			// batch forever. The post is skipped and named in the error log.
+			try {
+				if ( $this->index_post( $post ) ) {
+					$indexed++;
+				}
+			} catch ( \Throwable $e ) {
+				Logger::error(
+					'crawl',
+					sprintf( 'ایندکس «%s» به‌خاطر خطای محتوای همان صفحه انجام نشد و از آن عبور شد.', $post->post_title ),
+					array(
+						'post_id' => $post->ID,
+						'error'   => $e->getMessage(),
+					)
+				);
+			}
 		}
 
 		return array(
@@ -333,27 +400,56 @@ final class Indexer {
 	 * Store one post as a knowledge base document.
 	 *
 	 * @param WP_Post $post Post to index.
-	 * @return void
+	 * @return bool False when the crawler settings exclude it.
 	 */
 	private function index_post( WP_Post $post ) {
-		$content = apply_filters( 'the_content', $post->post_content );
-		$content = trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( $content ) ) );
+		$is_product = ( 'product' === $post->post_type && function_exists( 'wc_get_product' ) );
+		$product    = $is_product ? wc_get_product( $post->ID ) : null;
 
-		$excerpt = $post->post_excerpt;
-		if ( '' === $excerpt ) {
-			$excerpt = wp_trim_words( $content, 40, '...' );
+		// Products the owner chose to keep out of the assistant's knowledge.
+		if ( $product && $this->is_excluded_product( $product ) ) {
+			$this->repository->delete_by_post_id( $post->ID );
+
+			return false;
 		}
 
-		$is_product = ( 'product' === $post->post_type && function_exists( 'wc_get_product' ) );
+		// Shortcodes and page builders read the global post while rendering.
+		$previous        = isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null;
+		$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
+		setup_postdata( $post );
+
+		$content = apply_filters( 'the_content', $post->post_content );
+
+		$GLOBALS['post'] = $previous; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
+		if ( $previous ) {
+			setup_postdata( $previous );
+		}
+
+		$content = trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( $content ) ) );
+
+		$excerpt = trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( (string) $post->post_excerpt ) ) );
+		if ( '' === $excerpt || ( $is_product && ! $this->settings->get( 'wc_short_desc', true ) ) ) {
+			$excerpt = wp_trim_words( $content, 40, '...' );
+		}
 
 		if ( $is_product ) {
 			$categories = $this->term_names( $post->ID, 'product_cat' );
 			$tags       = $this->term_names( $post->ID, 'product_tag' );
+			$metadata   = $product ? $this->product_metadata( $product ) : array();
 		} else {
 			$cats       = get_the_category( $post->ID );
 			$categories = $cats ? wp_list_pluck( $cats, 'name' ) : array();
 			$post_tags  = get_the_tags( $post->ID );
 			$tags       = $post_tags ? wp_list_pluck( $post_tags, 'name' ) : array();
+			$metadata   = array();
+		}
+
+		if ( $this->settings->get( 'index_custom_fields' ) ) {
+			$fields = $this->custom_fields( $post->ID );
+
+			if ( $fields ) {
+				$metadata['fields'] = $fields;
+			}
 		}
 
 		$this->repository->upsert(
@@ -367,9 +463,11 @@ final class Indexer {
 				'slug'       => $post->post_name,
 				'categories' => $categories,
 				'tags'       => $tags,
-				'metadata'   => $is_product ? $this->product_metadata( $post->ID ) : array(),
+				'metadata'   => $metadata,
 			)
 		);
+
+		return true;
 	}
 
 	/**
@@ -382,6 +480,7 @@ final class Indexer {
 			array(
 				'post_type'              => $this->resolve_content_types(),
 				'post_status'            => 'publish',
+				'has_password'           => false,
 				'posts_per_page'         => 1,
 				'fields'                 => 'ids',
 				'no_found_rows'          => false,
@@ -461,28 +560,208 @@ final class Indexer {
 	}
 
 	/**
-	 * Extra fields worth indexing for a WooCommerce product.
+	 * Whether the crawler settings keep this product out of the index.
 	 *
-	 * @param int $post_id Product id.
-	 * @return array
+	 * @param \WC_Product $product Product.
+	 * @return bool
 	 */
-	private function product_metadata( $post_id ) {
-		$product = wc_get_product( $post_id );
-
-		if ( ! $product ) {
-			return array();
+	private function is_excluded_product( $product ) {
+		if ( $this->settings->get( 'wc_skip_outofstock' ) && 'outofstock' === $product->get_stock_status() ) {
+			return true;
 		}
 
-		return array(
-			'price'         => $product->get_price(),
-			'regular_price' => $product->get_regular_price(),
-			'sale_price'    => $product->get_sale_price(),
-			'sku'           => $product->get_sku(),
-			'stock_status'  => $product->get_stock_status(),
-			'type'          => $product->get_type(),
-			// Used by the AI-recommended `[[PRODUCT:id]]` card in the widget.
-			'image'         => (string) get_the_post_thumbnail_url( $post_id, 'medium' ),
+		// "Hidden" products are ones the shop itself does not list.
+		return $this->settings->get( 'wc_skip_hidden', true ) && 'hidden' === $product->get_catalog_visibility();
+	}
+
+	/**
+	 * Everything the settings say the assistant should know about a
+	 * product, beyond its description.
+	 *
+	 * Kept as structured data rather than appended to the description:
+	 * the description is truncated when it is handed to the model, and
+	 * facts added to its end (the colours, the variations) used to be the
+	 * first thing lost.
+	 *
+	 * @param \WC_Product $product Product.
+	 * @return array
+	 */
+	private function product_metadata( $product ) {
+		$id   = $product->get_id();
+		$meta = array(
+			'type'         => $product->get_type(),
+			// Always stored: the product card and its cart button depend on it.
+			'stock_status' => $product->get_stock_status(),
+			'image'        => (string) get_the_post_thumbnail_url( $id, 'medium' ),
+			'show_stock'   => (bool) $this->settings->get( 'wc_stock', true ),
 		);
+
+		if ( $this->settings->get( 'wc_price', true ) ) {
+			$meta['price']         = $product->get_price();
+			$meta['regular_price'] = $product->get_regular_price();
+			$meta['sale_price']    = $product->get_sale_price();
+
+			if ( $product->is_type( 'variable' ) ) {
+				$meta['price_min'] = $product->get_variation_price( 'min', true );
+				$meta['price_max'] = $product->get_variation_price( 'max', true );
+			}
+		}
+
+		if ( $this->settings->get( 'wc_stock', true ) && $product->managing_stock() && null !== $product->get_stock_quantity() ) {
+			$meta['stock_qty'] = (int) $product->get_stock_quantity();
+		}
+
+		if ( $this->settings->get( 'wc_sku', true ) && $product->get_sku() ) {
+			$meta['sku'] = $product->get_sku();
+		}
+
+		if ( $this->settings->get( 'wc_attributes' ) ) {
+			$attributes = $this->product_attributes( $product );
+
+			if ( $attributes ) {
+				$meta['attributes'] = $attributes;
+			}
+		}
+
+		if ( $this->settings->get( 'wc_variations', true ) && $product->is_type( 'variable' ) ) {
+			$variations = $this->product_variations( $product );
+
+			if ( $variations ) {
+				$meta['variations'] = $variations;
+			}
+		}
+
+		if ( $this->settings->get( 'wc_dimensions' ) ) {
+			if ( $product->has_weight() ) {
+				$meta['weight'] = wc_format_weight( $product->get_weight() );
+			}
+			if ( $product->has_dimensions() ) {
+				$meta['dimensions'] = wp_strip_all_tags( wc_format_dimensions( $product->get_dimensions( false ) ) );
+			}
+		}
+
+		if ( $this->settings->get( 'wc_reviews' ) ) {
+			$reviews = get_comments(
+				array(
+					'post_id' => $id,
+					'status'  => 'approve',
+					'type'    => 'review',
+					'number'  => 5,
+				)
+			);
+
+			foreach ( (array) $reviews as $review ) {
+				$meta['reviews'][] = wp_trim_words( wp_strip_all_tags( $review->comment_content ), 40, '…' );
+			}
+
+			if ( $product->get_review_count() ) {
+				$meta['rating'] = $product->get_average_rating() . '/5 (' . (int) $product->get_review_count() . ')';
+			}
+		}
+
+		return $meta;
+	}
+
+	/**
+	 * A product's attributes as label => comma separated values.
+	 *
+	 * @param \WC_Product $product Product.
+	 * @return array<string,string>
+	 */
+	private function product_attributes( $product ) {
+		$out = array();
+
+		foreach ( $product->get_attributes() as $attribute ) {
+			if ( ! is_object( $attribute ) || ! method_exists( $attribute, 'get_name' ) ) {
+				continue;
+			}
+
+			$values = $attribute->is_taxonomy()
+				? wc_get_product_terms( $product->get_id(), $attribute->get_name(), array( 'fields' => 'names' ) )
+				: $attribute->get_options();
+
+			if ( $values ) {
+				$out[ wc_attribute_label( $attribute->get_name() ) ] = implode( '، ', array_map( 'strval', (array) $values ) );
+			}
+
+			if ( count( $out ) >= 25 ) {
+				break;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * The purchasable variations of a variable product: what each one is
+	 * (colour, size, …), what it costs and whether it is in stock.
+	 *
+	 * @param \WC_Product $product Variable product.
+	 * @return array<int,array{label:string,price:string,stock:string,sku:string}>
+	 */
+	private function product_variations( $product ) {
+		$out = array();
+
+		foreach ( array_slice( (array) $product->get_children(), 0, self::MAX_VARIATIONS ) as $variation_id ) {
+			$variation = wc_get_product( $variation_id );
+
+			if ( ! $variation || ! $variation->exists() || 'publish' !== $variation->get_status() ) {
+				continue;
+			}
+
+			$label = wp_strip_all_tags( wc_get_formatted_variation( $variation, true, true, false ) );
+
+			if ( '' === $label ) {
+				continue;
+			}
+
+			$out[] = array(
+				'label' => $label,
+				'price' => $this->settings->get( 'wc_price', true ) ? (string) $variation->get_price() : '',
+				'stock' => $this->settings->get( 'wc_stock', true ) ? (string) $variation->get_stock_status() : '',
+				'sku'   => $this->settings->get( 'wc_sku', true ) ? (string) $variation->get_sku() : '',
+			);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Public custom fields of a post (ACF and the like). Keys starting
+	 * with an underscore are WordPress-internal and are never read.
+	 *
+	 * @param int $post_id Post id.
+	 * @return array<string,string>
+	 */
+	private function custom_fields( $post_id ) {
+		$out = array();
+
+		foreach ( (array) get_post_meta( $post_id ) as $key => $values ) {
+			if ( '' === $key || '_' === $key[0] || ! isset( $values[0] ) ) {
+				continue;
+			}
+
+			$value = maybe_unserialize( $values[0] );
+
+			if ( ! is_scalar( $value ) ) {
+				continue;
+			}
+
+			$value = trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( (string) $value ) ) );
+
+			// Ids, flags and empty values tell the assistant nothing.
+			if ( '' === $value || is_numeric( $value ) && strlen( $value ) < 3 ) {
+				continue;
+			}
+
+			$out[ str_replace( array( '_', '-' ), ' ', sanitize_text_field( $key ) ) ] = \Yuniq\Ai\Support\Text::truncate( $value, 200, '…' );
+
+			if ( count( $out ) >= 15 ) {
+				break;
+			}
+		}
+
+		return $out;
 	}
 
 	/**
@@ -517,11 +796,9 @@ final class Indexer {
 	 */
 	private function matches_any_slug( $path, array $slugs ) {
 		foreach ( $slugs as $slug ) {
-			if ( $path === $slug || false !== strpos( $path, $slug ) ) {
-				return true;
-			}
-
-			if ( false !== strpos( $path, rtrim( $slug, '/' ) ) ) {
+			// Both sides are wrapped in slashes, so `/cart/` matches the cart
+			// page but no longer every URL that merely starts with "cart".
+			if ( false !== strpos( $path, $slug ) ) {
 				return true;
 			}
 		}
@@ -592,13 +869,16 @@ final class Indexer {
 			)
 		);
 
-		$stored                 = get_option( Settings::OPTION_KEY, array() );
-		$stored                 = is_array( $stored ) ? $stored : array();
-		$stored['crawl_status'] = 'completed';
-		$stored['last_crawl']   = current_time( 'mysql' );
-		update_option( Settings::OPTION_KEY, $stored );
+		// Whatever this run did not re-index no longer exists on the site (or
+		// is excluded now), so it must not keep feeding answers. The settings
+		// option is deliberately left alone here: writing it re-ran the form
+		// sanitizer over the stored values and stripped backslashes from the
+		// custom CSS and prompt after every crawl.
+		$log = $this->get_log( $log_id );
 
-		$this->settings->flush();
+		if ( $log && ! empty( $log['started_at'] ) ) {
+			$this->repository->delete_stale( $log['started_at'] );
+		}
 
 		// Answers built from the old index are no longer correct.
 		$this->repository->flush_cache();

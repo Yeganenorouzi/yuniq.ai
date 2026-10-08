@@ -83,6 +83,9 @@ final class ConnectionController implements HookableInterface {
 			);
 		}
 
+		// Marks the "test the connection" setup step as done.
+		update_option( \Yuniq\Ai\Ai\Client::LAST_SUCCESS_OPTION, time(), false );
+
 		wp_send_json_success(
 			array(
 				'message' => sprintf(

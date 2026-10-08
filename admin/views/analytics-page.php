@@ -34,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 			<span class="stat-label">پاسخ‌های هوش مصنوعی</span>
 		</div>
 		<div class="yuniq-ai-stat-card">
-			<span class="stat-value"><?php echo esc_html( number_format_i18n( (float) $summary['average_response_time'], 2 ) ); ?>s</span>
+			<span class="stat-value"><?php echo esc_html( number_format_i18n( (float) $summary['average_response_time'], 1 ) ); ?> <small>ثانیه</small></span>
 			<span class="stat-label">میانگین زمان پاسخ</span>
 		</div>
 	</div>
@@ -60,7 +60,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<?php if ( empty( $recent ) ) : ?>
 			<p>هنوز گفتگویی ثبت نشده است.</p>
 		<?php else : ?>
-			<table class="widefat striped">
+			<div class="yuniq-ai-table-scroll"><table class="widefat striped">
 				<thead>
 					<tr>
 						<th>زمان</th>
@@ -72,14 +72,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 				<tbody>
 					<?php foreach ( $recent as $row ) : ?>
 						<tr>
-							<td><?php echo esc_html( $row['created_at'] ); ?></td>
+							<td><?php echo esc_html( \Yuniq\Ai\Support\Text::human_date( $row['created_at'] ) ); ?></td>
 							<td><?php echo esc_html( wp_trim_words( $row['user_question'], 12 ) ); ?></td>
-							<td><?php echo esc_html( $row['response_preview'] ); ?><?php echo strlen( $row['response_preview'] ) >= 120 ? '…' : ''; ?></td>
-							<td><?php echo esc_html( $row['tokens_used'] ); ?></td>
+							<td><?php echo esc_html( $row['response_preview'] ); ?><?php echo \Yuniq\Ai\Support\Text::length( $row['response_preview'] ) >= 160 ? '…' : ''; ?></td>
+							<td><?php echo esc_html( number_format_i18n( (int) $row['tokens_used'] ) ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
-			</table>
+			</table></div>
 		<?php endif; ?>
 	</div>
 </div>

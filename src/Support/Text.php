@@ -194,6 +194,53 @@ final class Text {
 	}
 
 	/**
+	 * Reduce a client-supplied session id to the shape the plugin issues:
+	 * letters, digits and dashes, at most 64 characters (the column width).
+	 *
+	 * @param mixed $raw Value from the request.
+	 * @return string Empty when nothing usable is left.
+	 */
+	public static function session_id( $raw ) {
+		$clean = preg_replace( '/[^A-Za-z0-9\-]/', '', is_scalar( $raw ) ? (string) $raw : '' );
+		$clean = substr( (string) $clean, 0, 64 );
+
+		return strlen( $clean ) >= 8 ? $clean : '';
+	}
+
+	/**
+	 * Persian and Arabic digits as Latin ones, for phone numbers and the like.
+	 *
+	 * @param string $text Raw text.
+	 * @return string
+	 */
+	public static function latin_digits( $text ) {
+		return strtr(
+			(string) $text,
+			array(
+				'۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+				'۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+				'٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+				'٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+			)
+		);
+	}
+
+	/**
+	 * A stored MySQL datetime in the site's own date format. Jalali
+	 * calendar plugins hook the same formatter, so they apply here too.
+	 *
+	 * @param string $mysql_date `Y-m-d H:i:s`, or empty.
+	 * @return string
+	 */
+	public static function human_date( $mysql_date ) {
+		if ( empty( $mysql_date ) || '0000-00-00 00:00:00' === $mysql_date ) {
+			return '';
+		}
+
+		return (string) mysql2date( get_option( 'date_format' ) . ' H:i', $mysql_date );
+	}
+
+	/**
 	 * Whether a normalized word is a stop word.
 	 *
 	 * @param string $word Normalized word.

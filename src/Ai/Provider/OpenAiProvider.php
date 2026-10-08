@@ -81,8 +81,9 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 		$model = $this->resolve_model( $options );
 
 		$args = array(
-			'method'  => 'POST',
-			'timeout' => $this->resolve_timeout( $options ),
+			'method'      => 'POST',
+			'redirection' => 0,
+			'timeout'     => $this->resolve_timeout( $options ),
 			'headers' => $this->request_headers(),
 			'body'    => wp_json_encode( $this->request_body( $messages, $options, $model, false ) ),
 		);
@@ -171,6 +172,10 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 				CURLOPT_HTTPHEADER     => $headers,
 				CURLOPT_POSTFIELDS     => wp_json_encode( $this->request_body( $messages, $options, $model, true ) ),
 				CURLOPT_RETURNTRANSFER => false,
+				// The request carries the API key: it must never be replayed
+				// to wherever a redirect points, nor leave http(s).
+				CURLOPT_FOLLOWLOCATION => false,
+				CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
 				CURLOPT_CONNECTTIMEOUT => 15,
 				CURLOPT_TIMEOUT        => max( 120, $this->resolve_timeout( $options ) ),
 				CURLOPT_WRITEFUNCTION  => function ( $handle, $data ) use ( &$buffer, &$content, &$tokens, &$raw, &$status, $on_chunk ) {
@@ -354,8 +359,9 @@ final class OpenAiProvider implements AiProviderInterface, StreamingProviderInte
 		$response = wp_remote_get(
 			$this->base_url() . '/models',
 			array(
-				'timeout' => 20,
-				'headers' => array(
+				'timeout'     => 20,
+				'redirection' => 0,
+				'headers'     => array(
 					'Authorization' => 'Bearer ' . $this->api_key,
 					'Accept'        => 'application/json',
 				),

@@ -9,6 +9,7 @@
 namespace Yuniq\Ai\LiveSupport;
 
 use Yuniq\Ai\Setup\Schema;
+use Yuniq\Ai\Support\Text;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -47,7 +48,9 @@ final class LeadRepository {
 
 		$clean = array();
 		foreach ( $fields as $name => $value ) {
-			$clean[ sanitize_key( $name ) ] = sanitize_text_field( (string) $value );
+			// Keys are the field labels (often Persian), which sanitize_key()
+			// would reduce to nothing.
+			$clean[ sanitize_text_field( (string) $name ) ] = sanitize_textarea_field( (string) $value );
 		}
 
 		$wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
@@ -55,12 +58,16 @@ final class LeadRepository {
 			array(
 				'session_id' => sanitize_text_field( $session_id ),
 				'form_key'   => sanitize_key( $form_key ),
-				'fields'     => wp_json_encode( $clean ),
+				'fields'     => wp_json_encode( $clean, JSON_UNESCAPED_UNICODE ),
 				'status'     => 'new',
 				'created_at' => current_time( 'mysql' ),
 			),
 			array( '%s', '%s', '%s', '%s', '%s' )
 		);
+
+		if ( ! $wpdb->insert_id ) {
+			\Yuniq\Ai\Support\Logger::db( 'ذخیره سرنخ (فرم) انجام نشد.' );
+		}
 
 		return $wpdb->insert_id ? (int) $wpdb->insert_id : false;
 	}
@@ -82,8 +89,9 @@ final class LeadRepository {
 		$rows = $rows ? $rows : array();
 
 		foreach ( $rows as &$row ) {
-			$decoded        = json_decode( (string) $row['fields'], true );
-			$row['fields']  = is_array( $decoded ) ? $decoded : array();
+			$decoded           = json_decode( (string) $row['fields'], true );
+			$row['fields']     = is_array( $decoded ) ? $decoded : array();
+			$row['created_at'] = Text::human_date( $row['created_at'] );
 		}
 		unset( $row );
 

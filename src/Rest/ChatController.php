@@ -12,6 +12,7 @@ use Yuniq\Ai\Ai\Client;
 use Yuniq\Ai\Analytics\Repository as Analytics;
 use Yuniq\Ai\Contracts\HookableInterface;
 use Yuniq\Ai\Settings;
+use Yuniq\Ai\Support\Logger;
 use Yuniq\Ai\Support\RateLimiter;
 use Yuniq\Ai\Support\Text;
 use WP_REST_Request;
@@ -179,8 +180,8 @@ final class ChatController implements HookableInterface {
 
 		if ( empty( $response['success'] ) ) {
 			return $this->error(
-				isset( $response['error'] ) ? $response['error'] : __( 'پاسخی دریافت نشد.', 'yuniq-ai' ),
-				500,
+				$this->public_error( $response ),
+				503,
 				$session_id,
 				array( 'needs_human' => true )
 			);
@@ -195,6 +196,7 @@ final class ChatController implements HookableInterface {
 				'needs_human' => ! empty( $response['needs_human'] ),
 				'product'     => isset( $response['product'] ) ? $response['product'] : null,
 				'form_key'    => isset( $response['form_key'] ) ? $response['form_key'] : null,
+				'options'     => isset( $response['options'] ) ? $response['options'] : array(),
 			),
 			200
 		);
@@ -245,7 +247,7 @@ final class ChatController implements HookableInterface {
 			$this->send_event(
 				array(
 					'type'  => 'error',
-					'error' => isset( $response['error'] ) ? $response['error'] : __( 'پاسخی دریافت نشد.', 'yuniq-ai' ),
+					'error' => $this->public_error( $response ),
 				)
 			);
 		} else {
@@ -255,6 +257,10 @@ final class ChatController implements HookableInterface {
 
 			if ( ! empty( $response['form_key'] ) ) {
 				$this->send_event( array( 'type' => 'form', 'form_key' => $response['form_key'] ) );
+			}
+
+			if ( ! empty( $response['options'] ) ) {
+				$this->send_event( array( 'type' => 'options', 'options' => $response['options'] ) );
 			}
 		}
 
@@ -318,7 +324,7 @@ final class ChatController implements HookableInterface {
 		}
 
 		$message    = (string) $request->get_param( 'message' );
-		$session_id = (string) $request->get_param( 'session_id' );
+		$session_id = Text::session_id( $request->get_param( 'session_id' ) );
 		$history    = $request->get_param( 'history' );
 
 		if ( '' === $session_id ) {
@@ -333,6 +339,10 @@ final class ChatController implements HookableInterface {
 
 		if ( $this->is_rate_limited( $session_id ) ) {
 			return $this->error( __( 'تعداد درخواست‌ها زیاد است. لطفاً کمی صبر کنید.', 'yuniq-ai' ), 429, $session_id );
+		}
+
+		if ( $this->daily_cap_reached() ) {
+			return $this->error( __( 'ظرفیت پاسخ‌گویی امروز دستیار پر شده است. لطفاً فردا دوباره سر بزنید یا از راه‌های تماس سایت استفاده کنید.', 'yuniq-ai' ), 429, $session_id, array( 'needs_human' => true ) );
 		}
 
 		return array( $message, $session_id, is_array( $history ) ? $history : array() );
@@ -381,7 +391,7 @@ final class ChatController implements HookableInterface {
 
 		if ( ! headers_sent() ) {
 			header( 'Content-Type: text/event-stream; charset=utf-8' );
-			header( 'Cache-Control: no-cache, no-store, must-revalidate' );
+			header( 'Cache-Control: no-cache, no-store, must-revalidate, no-transform' );
 			header( 'Connection: keep-alive' );
 			// Stops nginx and other reverse proxies from buffering the stream.
 			header( 'X-Accel-Buffering: no' );
@@ -409,6 +419,43 @@ final class ChatController implements HookableInterface {
 	}
 
 	/**
+	 * What a failed turn says to the person in the chat.
+	 *
+	 * The provider's own message can name the endpoint, the model, the
+	 * account's quota or part of the API key. Visitors get a plain apology;
+	 * the detail is in the error log, and is added here only for a
+	 * logged-in administrator testing their own site.
+	 *
+	 * @param array $response Provider result.
+	 * @return string
+	 */
+	private function public_error( array $response ) {
+		$message = __( 'متأسفانه الان نمی‌توانم پاسخ بدهم. لطفاً چند لحظه بعد دوباره تلاش کنید.', 'yuniq-ai' );
+
+		if ( ! empty( $response['error'] ) && current_user_can( 'manage_options' ) ) {
+			$message .= "\n\n" . __( '(فقط شما به‌عنوان مدیر این را می‌بینید)', 'yuniq-ai' ) . ' ' . Logger::redact( (string) $response['error'] );
+		}
+
+		return $message;
+	}
+
+	/**
+	 * Per-visitor limits for the profile chosen on the settings screen.
+	 *
+	 * @return array{0:int,1:int} IP limit, session limit.
+	 */
+	private function limits() {
+		switch ( $this->settings->get( 'rate_profile', 'balanced' ) ) {
+			case 'strict':
+				return array( 15, 10 );
+			case 'relaxed':
+				return array( 60, 40 );
+		}
+
+		return array( self::IP_LIMIT, self::SESSION_LIMIT );
+	}
+
+	/**
 	 * Throttle on both the client IP and the supplied session id.
 	 *
 	 * The session id travels with the request and can be rotated freely,
@@ -418,13 +465,41 @@ final class ChatController implements HookableInterface {
 	 * @return bool
 	 */
 	private function is_rate_limited( $session_id ) {
-		$ip = RateLimiter::client_ip();
+		list( $ip_limit, $session_limit ) = $this->limits();
 
-		if ( '' !== $ip && $this->rate_limiter->hit( 'ip:' . $ip, self::IP_LIMIT, self::RATE_WINDOW ) ) {
+		$ip = RateLimiter::client_ip( (string) $this->settings->get( 'ip_source', 'remote_addr' ) );
+
+		if ( '' !== $ip && $this->rate_limiter->hit( 'ip:' . $ip, $ip_limit, self::RATE_WINDOW ) ) {
+			Logger::warning( 'security', 'یک بازدیدکننده به سقف تعداد پیام رسید و موقتاً محدود شد.', array( 'ip' => Logger::mask_ip( $ip ) ) );
+
 			return true;
 		}
 
-		return $this->rate_limiter->hit( 'session:' . $session_id, self::SESSION_LIMIT, self::RATE_WINDOW );
+		return $this->rate_limiter->hit( 'session:' . $session_id, $session_limit, self::RATE_WINDOW );
+	}
+
+	/**
+	 * Site-wide ceiling on answered messages per day.
+	 *
+	 * Per-visitor limits do not stop many addresses each sending a few
+	 * messages; this is what bounds the owner's bill in that case.
+	 *
+	 * @return bool True when today's allowance is used up.
+	 */
+	private function daily_cap_reached() {
+		$cap = (int) $this->settings->get( 'daily_limit', 0 );
+
+		if ( $cap <= 0 ) {
+			return false;
+		}
+
+		if ( $this->rate_limiter->hit( 'day:' . current_time( 'Ymd' ), $cap, DAY_IN_SECONDS ) ) {
+			Logger::warning( 'security', 'سقف روزانه پیام‌ها پر شد و دستیار تا فردا پاسخ نمی‌دهد. در صورت نیاز سقف را در تب «امنیت» بیشتر کنید.', array( 'cap' => $cap ) );
+
+			return true;
+		}
+
+		return false;
 	}
 
 	/**

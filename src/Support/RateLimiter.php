@@ -48,37 +48,68 @@ final class RateLimiter {
 	 */
 	public function hit( $bucket, $limit, $window ) {
 		$key   = $this->prefix . md5( (string) $bucket );
-		$count = (int) get_transient( $key );
+		$state = get_transient( $key );
+		$now   = time();
 
-		if ( $count >= $limit ) {
+		// The window is anchored to the first request. Re-saving the counter
+		// with a fresh timeout on every hit used to push the expiry forward
+		// forever, so a steady visitor ended up blocked permanently.
+		if ( ! is_array( $state ) || empty( $state['start'] ) || $now - (int) $state['start'] >= $window ) {
+			$state = array(
+				'start' => $now,
+				'count' => 0,
+			);
+		}
+
+		if ( (int) $state['count'] >= $limit ) {
 			return true;
 		}
 
-		set_transient( $key, $count + 1, $window );
+		++$state['count'];
+
+		set_transient( $key, $state, max( 1, $window - ( $now - (int) $state['start'] ) ) );
 
 		return false;
 	}
 
 	/**
-	 * Best-effort client IP.
+	 * The visitor's IP address.
 	 *
-	 * Only `REMOTE_ADDR` is trusted by default: forwarded headers are
-	 * attacker-controlled unless a known proxy sits in front of the site.
-	 * Sites behind Cloudflare or a load balancer can opt in with the
-	 * `yuniq_ai_client_ip` filter.
+	 * Only `REMOTE_ADDR` cannot be forged by the visitor, so it is the
+	 * default. A site behind Cloudflare or another reverse proxy sees the
+	 * proxy's address there for everyone — all visitors would then share
+	 * one rate-limit bucket — so the owner can name the header their
+	 * proxy sets. That header is only trustworthy when requests really do
+	 * arrive through that proxy, which is why it is opt-in.
 	 *
-	 * @return string
+	 * @param string $source remote_addr, cloudflare, forwarded or real_ip.
+	 * @return string Empty when no valid address is available.
 	 */
-	public static function client_ip() {
-		$ip = isset( $_SERVER['REMOTE_ADDR'] )
-			? (string) rest_is_ip_address( wp_unslash( $_SERVER['REMOTE_ADDR'] ) )
-			: '';
+	public static function client_ip( $source = 'remote_addr' ) {
+		$headers = array(
+			'cloudflare' => 'HTTP_CF_CONNECTING_IP',
+			'forwarded'  => 'HTTP_X_FORWARDED_FOR',
+			'real_ip'    => 'HTTP_X_REAL_IP',
+		);
+
+		$ip = '';
+
+		if ( isset( $headers[ $source ], $_SERVER[ $headers[ $source ] ] ) ) {
+			// X-Forwarded-For is a list; the first entry is the client.
+			$parts = explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $headers[ $source ] ] ) ) );
+			$ip    = (string) rest_is_ip_address( trim( $parts[0] ) );
+		}
+
+		if ( '' === $ip && isset( $_SERVER['REMOTE_ADDR'] ) ) {
+			$ip = (string) rest_is_ip_address( sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) );
+		}
 
 		/**
-		 * Filters the IP used for rate limiting.
+		 * Filters the client IP used for rate limiting.
 		 *
-		 * @param string $ip Resolved client IP, empty when undetermined.
+		 * @param string $ip     Detected address.
+		 * @param string $source Configured source.
 		 */
-		return (string) apply_filters( 'yuniq_ai_client_ip', $ip );
+		return (string) apply_filters( 'yuniq_ai_client_ip', $ip, $source );
 	}
 }

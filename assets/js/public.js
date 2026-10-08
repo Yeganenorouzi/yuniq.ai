@@ -26,8 +26,8 @@
 	var closeBtn = document.getElementById('yuniq-ai-panel-close');
 	var themeBtn = document.getElementById('yuniq-ai-theme-toggle');
 	var jumpBtn = document.getElementById('yuniq-ai-jump');
-	var tickerEl = document.getElementById('yuniq-ai-prompt-ticker');
-	var trackEl = document.getElementById('yuniq-ai-ticker-track');
+	var optionsEl = document.getElementById('yuniq-ai-options');
+	var resetBtn = document.getElementById('yuniq-ai-reset');
 	var humanBtn = document.getElementById('yuniq-ai-talk-human');
 
 	var TXT_GENERIC_ERROR = strings.genericError || 'مشکلی پیش آمد. لطفاً دوباره تلاش کنید.';
@@ -38,8 +38,10 @@
 	var isOpen = false;
 	var isSending = false;
 	var chatStarted = false;
+	var restoring = false;
 	var lastFocused = null;
 
+	var pageMode = root.classList.contains('yuniq-ai-page-mode');
 	var liveSupport = cfg.liveSupport || {};
 	var conversationStatus = 'bot'; // bot | pending | active | resolved
 	var lastMessageId = 0;
@@ -52,8 +54,63 @@
 		try {
 			if (op === 'get') return localStorage.getItem(key);
 			if (op === 'set') localStorage.setItem(key, value);
+			if (op === 'del') localStorage.removeItem(key);
 		} catch (e) {}
 		return null;
+	}
+
+	/** A v4-shaped id, so a session exists before the first chat turn. */
+	function newSessionId() {
+		if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+			return window.crypto.randomUUID();
+		}
+		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+			var r = Math.random() * 16 | 0;
+			return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+		});
+	}
+
+	function ensureSession() {
+		if (!sessionId) rememberSession(newSessionId());
+		return sessionId;
+	}
+
+	/**
+	 * fetch() against the plugin's REST routes.
+	 *
+	 * The routes are public, so the nonce is only sent when the server
+	 * handed one out (logged-in users). A cached page can still carry a
+	 * nonce that has since expired; WordPress answers that with a 403
+	 * before the route ever runs, so that one case is retried without it.
+	 */
+	function api(path, options) {
+		var opts = options || {};
+
+		function run(withNonce) {
+			var headers = {};
+			if (opts.body) headers['Content-Type'] = 'application/json';
+			if (withNonce && nonce) headers['X-WP-Nonce'] = nonce;
+
+			return fetch(restUrl + path, {
+				method: opts.method || 'GET',
+				headers: headers,
+				body: opts.body ? JSON.stringify(opts.body) : undefined,
+				credentials: 'same-origin'
+			});
+		}
+
+		return run(true).then(function (res) {
+			if (res.status === 403 && nonce) {
+				return res.clone().json().then(function (data) {
+					if (data && data.code === 'rest_cookie_invalid_nonce') {
+						nonce = '';
+						return run(false);
+					}
+					return res;
+				}, function () { return res; });
+			}
+			return res;
+		});
 	}
 
 	function isMobile() {
@@ -72,7 +129,7 @@
 	}
 
 	function escAttr(text) {
-		return escHtml(text).replace(/"/g, '&quot;');
+		return escHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 	}
 
 	/* =====================================================
@@ -203,6 +260,10 @@
 
 	/** Keeps Tab inside the dialog while it is open. */
 	function onKeydown(e) {
+		// On the shortcode page the panel is ordinary content: Escape must
+		// not close it (nothing could reopen it) and Tab must not be trapped.
+		if (pageMode) return;
+
 		if (e.key === 'Escape' && isOpen) {
 			e.preventDefault();
 			closePanel();
@@ -232,8 +293,10 @@
 	   Panel
 	   ===================================================== */
 	function afterOpen() {
-		if (input && !isMobile()) input.focus({ preventScroll: true });
-		if (motion.api) motion.api.enterChips(trackEl ? trackEl.children : null);
+		// Page mode opens on load: grabbing focus there would yank the
+		// keyboard and the scroll position away from the page itself.
+		if (input && !isMobile() && !pageMode) input.focus({ preventScroll: true });
+		if (motion.api && !chatStarted) motion.api.enterChips(optionsEl ? optionsEl.children : null);
 	}
 
 	function openPanel() {
@@ -245,7 +308,8 @@
 		root.classList.add('is-open');
 		panel.setAttribute('aria-hidden', 'false');
 		launcher.setAttribute('aria-expanded', 'true');
-		document.body.classList.add('yuniq-ai-open');
+		// The shortcode page is inline content, not an overlay to lock behind.
+		if (!pageMode) document.body.classList.add('yuniq-ai-open');
 
 		if (motion.api) {
 			motion.api.open({ root: root, panel: panel, isMobile: isMobile(), onComplete: afterOpen });
@@ -309,44 +373,88 @@
 	}
 
 	/* =====================================================
-	   Suggestion chips
+	   Starter options
 	   ===================================================== */
-	function initChips() {
-		if (!trackEl) return;
+	function sameOrigin(url) {
+		try {
+			return new URL(url, window.location.href).origin === window.location.origin;
+		} catch (e) {
+			return false;
+		}
+	}
+
+	/**
+	 * The admin's quick actions, as cards the visitor picks from. A card
+	 * with a link goes there; any other card asks its question.
+	 */
+	function initOptions() {
+		if (!optionsEl) return;
 
 		var actions = Array.isArray(cfg.quickActions) ? cfg.quickActions : [];
-		var built = 0;
 
-		trackEl.innerHTML = '';
+		optionsEl.innerHTML = '';
 
 		actions.forEach(function (a) {
 			if (!a) return;
 			var label = String(a.label || '').trim();
 			if (!label) return;
 
-			var btn = document.createElement('button');
-			btn.type = 'button';
-			btn.className = 'yuniq-ai-ticker-chip';
-			btn.textContent = label;
-			btn.addEventListener('click', function (e) {
-				e.preventDefault();
-				sendMessage(String(a.prompt || label).trim());
-			});
-			trackEl.appendChild(btn);
-			built++;
+			var link = String(a.link || '').trim();
+			// Only ordinary web addresses: never javascript:, data: and the like.
+			if (link && !/^(https?:\/\/|\/(?!\/)|#|\?)/i.test(link)) link = '';
+			var desc = String(a.desc || '').trim();
+			var card = document.createElement(link ? 'a' : 'button');
+
+			card.className = 'yuniq-ai-option';
+			if (link) {
+				card.href = link;
+				if (!sameOrigin(link)) {
+					card.target = '_blank';
+					card.rel = 'noopener noreferrer';
+				}
+			} else {
+				card.type = 'button';
+				card.addEventListener('click', function () {
+					sendMessage(String(a.prompt || label).trim());
+				});
+			}
+
+			var title = document.createElement('span');
+			title.className = 'yuniq-ai-option-title';
+			title.textContent = label;
+			card.appendChild(title);
+
+			if (desc) {
+				var sub = document.createElement('span');
+				sub.className = 'yuniq-ai-option-desc';
+				sub.textContent = desc;
+				card.appendChild(sub);
+			}
+
+			optionsEl.appendChild(card);
 		});
 
-		if (!built && tickerEl) tickerEl.classList.add('is-hidden');
+		if (!optionsEl.children.length) optionsEl.hidden = true;
 	}
-	initChips();
+	initOptions();
 
 	function startChatUI() {
 		if (chatStarted) return;
 		chatStarted = true;
 
 		if (introEl) introEl.hidden = true;
-		if (tickerEl) tickerEl.classList.add('is-hidden');
 		if (messagesEl) messagesEl.classList.add('is-active');
+		if (resetBtn) resetBtn.hidden = false;
+
+		// The greeting opens every new conversation. It is display-only:
+		// it is never replayed to the model as history.
+		if (cfg.welcomeMessage && !restoring) {
+			var hello = document.createElement('div');
+			hello.className = 'yuniq-ai-msg yuniq-ai-msg-assistant';
+			hello.innerHTML = formatText(cfg.welcomeMessage);
+			messagesEl.appendChild(hello);
+			remember('assistant', cfg.welcomeMessage);
+		}
 	}
 
 	/* =====================================================
@@ -375,14 +483,37 @@
 	   Rendering
 	   ===================================================== */
 	function formatText(text) {
+		// Quotes are escaped too: the URL of a markdown link lands inside an
+		// href attribute, and an unescaped quote there could close it.
 		var html = String(text || '')
 			.replace(/&/g, '&amp;')
 			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;');
-		html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
+		var links = [];
+
+		// Links are parked behind placeholders so the bare-URL pass below
+		// cannot wrap an address that is already inside an anchor.
+		function park(url, label) {
+			links.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + label + '</a>');
+			return '\u0001' + (links.length - 1) + '\u0001';
+		}
+
+		html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (m, label, url) {
+			return park(url, label);
+		});
+		html = html.replace(/https?:\/\/[^\s<\u0001]+/g, function (url) {
+			// Sentence punctuation right after an address is not part of it.
+			var tail = (url.match(url.indexOf('(') === -1 ? /(?:[.,;:!?)»،؛؟]|&quot;|&#39;)+$/ : /(?:[.,;:!?»،؛؟]|&quot;|&#39;)+$/) || [''])[0];
+			var clean = tail ? url.slice(0, -tail.length) : url;
+			return park(clean, clean) + tail;
+		});
 		html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+		html = html.replace(/^\s*[-*•]\s+/gm, '• ');
+		html = html.replace(/^#{1,6}\s+(.+)$/gm, '<strong>$1</strong>');
 		html = html.replace(/\n/g, '<br>');
-		html = html.replace(/(^|[^"'>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+		html = html.replace(/\u0001(\d+)\u0001/g, function (m, i) { return links[+i]; });
 		return html;
 	}
 
@@ -392,14 +523,121 @@
 		var stick = atBottom();
 		var el = document.createElement('div');
 		el.className = 'yuniq-ai-msg yuniq-ai-msg-' + (role === 'user' ? 'user' : 'assistant');
+		el.setAttribute('dir', 'auto');
 		el.innerHTML = formatText(text);
 		messagesEl.appendChild(el);
+		clearOptions();
 
-		if (motion.api) motion.api.enterMessage(el);
+		if (motion.api && !restoring) motion.api.enterMessage(el);
 		if (stick || role === 'user') scrollToBottom();
 		else updateJump();
 
 		return el;
+	}
+
+	/* =====================================================
+	   Transcript — survives moving between pages
+	   ===================================================== */
+	var TRANSCRIPT_KEY = 'yuniq_ai_transcript';
+	var TRANSCRIPT_MAX = 40;
+	var transcript = [];
+
+	function session(op, value) {
+		try {
+			if (op === 'get') return sessionStorage.getItem(TRANSCRIPT_KEY);
+			if (op === 'set') sessionStorage.setItem(TRANSCRIPT_KEY, value);
+			if (op === 'del') sessionStorage.removeItem(TRANSCRIPT_KEY);
+		} catch (e) {}
+		return null;
+	}
+
+	/** Record one finished bubble: role is user, assistant, agent or system. */
+	function remember(role, text) {
+		if (restoring || !text) return;
+		transcript.push({ r: role, t: String(text) });
+		if (transcript.length > TRANSCRIPT_MAX) transcript = transcript.slice(-TRANSCRIPT_MAX);
+		session('set', JSON.stringify({ s: sessionId, m: transcript, h: history.slice(-12) }));
+	}
+
+	/**
+	 * Without this the conversation vanished on every page change, which
+	 * on a shop means the moment the visitor opened a suggested product.
+	 */
+	function restoreTranscript() {
+		var saved = null;
+		try { saved = JSON.parse(session('get') || 'null'); } catch (e) {}
+		if (!saved || !Array.isArray(saved.m) || !saved.m.length || (saved.s && sessionId && saved.s !== sessionId)) return;
+
+		restoring = true;
+		startChatUI();
+
+		saved.m.forEach(function (m) {
+			if (!m || typeof m.t !== 'string') return;
+			if (m.r === 'system') {
+				appendNotice(m.t);
+			} else {
+				var el = appendMessage(m.r === 'user' ? 'user' : 'assistant', m.t);
+				if (m.r === 'agent') el.classList.add('yuniq-ai-msg-agent');
+			}
+		});
+
+		transcript = saved.m;
+		history = Array.isArray(saved.h) ? saved.h : [];
+		restoring = false;
+		scrollToBottom();
+	}
+
+	function resetConversation() {
+		if (isSending || conversationStatus === 'pending' || conversationStatus === 'active') return;
+
+		transcript = [];
+		history = [];
+		chatStarted = false;
+		session('del');
+		messagesEl.innerHTML = '';
+		messagesEl.classList.remove('is-active');
+		if (introEl) introEl.hidden = false;
+		if (resetBtn) resetBtn.hidden = true;
+		rememberSession(newSessionId());
+		updateJump();
+		if (input) input.focus({ preventScroll: true });
+	}
+
+	if (resetBtn) resetBtn.addEventListener('click', resetConversation);
+
+	/* =====================================================
+	   Follow-up options under a reply
+	   ===================================================== */
+	function clearOptions() {
+		var old = messagesEl.querySelector('.yuniq-ai-replies');
+		if (old) old.remove();
+	}
+
+	function renderOptions(list) {
+		if (!Array.isArray(list) || !list.length) return;
+		if (conversationStatus === 'pending' || conversationStatus === 'active') return;
+
+		clearOptions();
+
+		var wrap = document.createElement('div');
+		wrap.className = 'yuniq-ai-replies';
+
+		list.slice(0, 4).forEach(function (label) {
+			label = String(label || '').trim();
+			if (!label) return;
+			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'yuniq-ai-reply';
+			btn.textContent = label;
+			btn.addEventListener('click', function () { sendMessage(label); });
+			wrap.appendChild(btn);
+		});
+
+		if (!wrap.children.length) return;
+
+		messagesEl.appendChild(wrap);
+		if (motion.api) motion.api.enterChips(wrap.children);
+		scrollToBottom();
 	}
 
 	function showTyping() {
@@ -428,10 +666,13 @@
 	 */
 	function createRenderer(el) {
 		var pending = false;
+		var finished = false;
 		var buffer = '';
 
 		function paint() {
 			pending = false;
+			// A frame queued before finish() must not put the caret back.
+			if (finished) return;
 			var stick = atBottom();
 			el.innerHTML = formatText(buffer) + '<span class="yuniq-ai-caret"></span>';
 			if (stick) scrollToBottom();
@@ -447,6 +688,7 @@
 				}
 			},
 			finish: function () {
+				finished = true;
 				pending = false;
 				var stick = atBottom();
 				el.innerHTML = formatText(buffer);
@@ -466,31 +708,50 @@
 		el.className = 'yuniq-ai-msg yuniq-ai-msg-system';
 		el.textContent = text;
 		messagesEl.appendChild(el);
-		if (motion.api) motion.api.enterMessage(el);
+		clearOptions();
+		if (motion.api && !restoring) motion.api.enterMessage(el);
 		scrollToBottom();
+		remember('system', text);
 		return el;
 	}
 
-	function escalate() {
-		if (!liveSupport.enabled || conversationStatus === 'pending' || conversationStatus === 'active') return;
+	var ESCALATED_KEY = 'yuniq_ai_escalated';
+	var escalating = false;
 
+	function setStatus(status) {
+		conversationStatus = status;
+		var withAgent = status === 'pending' || status === 'active';
+		root.classList.toggle('is-with-agent', withAgent);
+		if (humanBtn) humanBtn.hidden = withAgent;
+		if (withAgent) store('set', ESCALATED_KEY, '1');
+		else store('del', ESCALATED_KEY);
+	}
+
+	function escalate() {
+		if (!liveSupport.enabled || escalating || conversationStatus === 'pending' || conversationStatus === 'active') return;
+
+		escalating = true;
+		if (humanBtn) humanBtn.disabled = true;
 		appendNotice(strings.escalating || 'در حال اتصال به کارشناس...');
 
-		fetch(restUrl + 'escalate', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
-			body: JSON.stringify({ session_id: sessionId })
-		})
+		// The button is always on screen, so it can be the visitor's very
+		// first action — before any chat turn has created a session.
+		api('escalate', { method: 'POST', body: { session_id: ensureSession() } })
 			.then(function (res) { return res.json(); })
 			.then(function (data) {
 				if (!data || !data.success) {
 					appendNotice((data && data.error) ? data.error : TXT_GENERIC_ERROR);
 					return;
 				}
-				conversationStatus = data.status || 'pending';
+				setStatus(data.status || 'pending');
+				if (strings.agentWillReply) appendNotice(strings.agentWillReply);
 				startPolling();
 			})
-			.catch(function () { appendNotice(TXT_NETWORK_ERROR); });
+			.catch(function () { appendNotice(TXT_NETWORK_ERROR); })
+			.then(function () {
+				escalating = false;
+				if (humanBtn) humanBtn.disabled = false;
+			});
 	}
 
 	function startPolling() {
@@ -506,9 +767,10 @@
 	}
 
 	function pollMessages() {
-		fetch(restUrl + 'conversation/' + encodeURIComponent(sessionId) + '/messages?after_id=' + lastMessageId, {
-			headers: { 'X-WP-Nonce': nonce }
-		})
+		// A background tab has nobody to show a reply to.
+		if (document.hidden || !sessionId) return;
+
+		api('conversation/' + encodeURIComponent(sessionId) + '/messages?after_id=' + lastMessageId)
 			.then(function (res) { return res.json(); })
 			.then(function (data) {
 				if (!data || !data.success) return;
@@ -517,42 +779,48 @@
 
 				(data.messages || []).forEach(function (m) {
 					lastMessageId = Math.max(lastMessageId, parseInt(m.id, 10) || 0);
-					if (m.role === 'agent') {
-						var el = appendMessage('assistant', m.content);
-						el.classList.add('yuniq-ai-msg-agent');
-					}
 				});
 
 				if (data.status === 'active' && wasPending) {
 					appendNotice(strings.connectedToAgent || 'به کارشناس پشتیبانی متصل شدید');
 				}
 
-				conversationStatus = data.status || conversationStatus;
+				// After the "connected" line, so the agent's first words follow it.
+				(data.messages || []).forEach(function (m) {
+					if (m.role === 'agent') {
+						appendMessage('assistant', m.content).classList.add('yuniq-ai-msg-agent');
+						remember('agent', m.content);
+					}
+				});
 
-				if (conversationStatus === 'resolved') {
+				if (data.status === 'pending' || data.status === 'active') {
+					if (data.status !== conversationStatus) setStatus(data.status);
+				} else if (conversationStatus === 'pending' || conversationStatus === 'active') {
+					// Closed by the agent (or the conversation is gone).
 					stopPolling();
 					appendNotice(strings.resolvedByAgent || 'گفتگو با کارشناس پایان یافت.');
-					conversationStatus = 'bot';
+					setStatus('bot');
 				}
 			})
 			.catch(function () {});
 	}
 
 	function sendEscalatedMessage(message) {
-		fetch(restUrl + 'conversation/' + encodeURIComponent(sessionId) + '/messages', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
-			body: JSON.stringify({ message: message })
-		})
-			.then(function (res) { return res.json(); })
-			.then(function (data) {
-				if (!data || !data.success) {
-					appendNotice((data && data.error) ? data.error : TXT_GENERIC_ERROR);
-					conversationStatus = 'bot';
+		api('conversation/' + encodeURIComponent(sessionId) + '/messages', { method: 'POST', body: { message: message } })
+			.then(function (res) {
+				return res.json().then(function (data) { return { status: res.status, data: data }; });
+			})
+			.then(function (r) {
+				if (r.data && r.data.success) return;
+				appendNotice((r.data && r.data.error) ? r.data.error : TXT_GENERIC_ERROR);
+				// Only "this conversation is closed" hands the visitor back to
+				// the assistant; a rate limit or a blip must not end the handoff.
+				if (r.status === 409) {
+					setStatus('bot');
 					stopPolling();
 				}
 			})
-			.catch(function () {})
+			.catch(function () { appendNotice(TXT_NETWORK_ERROR); })
 			.then(finishTurn);
 	}
 
@@ -584,6 +852,10 @@
 		card.className = 'yuniq-ai-msg yuniq-ai-msg-assistant yuniq-ai-product-card';
 
 		var html = '';
+		// Addresses come from the site's own index, but are still held to http(s).
+		if (product.url && !/^https?:\/\//i.test(product.url)) product.url = '';
+		if (product.image && !/^https?:\/\//i.test(product.image)) product.image = '';
+
 		if (product.image) {
 			html += '<img class="yuniq-ai-product-image" src="' + escAttr(product.image) + '" alt="" loading="lazy">';
 		}
@@ -597,7 +869,7 @@
 		}
 
 		if (product.stock_status) {
-			var inStock = product.stock_status === 'instock';
+			var inStock = product.stock_status !== 'outofstock';
 			html += '<span class="yuniq-ai-product-stock ' + (inStock ? 'is-in-stock' : 'is-out-of-stock') + '">' +
 				escHtml(inStock ? (strings.inStock || 'موجود') : (strings.outOfStock || 'ناموجود')) + '</span>';
 		}
@@ -605,7 +877,10 @@
 		html += '<div class="yuniq-ai-product-actions">';
 		if (product.url) {
 			html += '<a class="yuniq-ai-product-btn" href="' + escAttr(product.url) + '" target="_blank" rel="noopener noreferrer">' + escHtml(strings.viewProduct || 'مشاهده محصول') + '</a>';
-			html += '<a class="yuniq-ai-product-btn yuniq-ai-product-btn-primary" href="' + escAttr(product.url) + '?add-to-cart=' + encodeURIComponent(product.id) + '">' + escHtml(strings.addToCart || 'افزودن به سبد خرید') + '</a>';
+			if (product.purchasable !== false) {
+				var cartUrl = product.url + (product.url.indexOf('?') === -1 ? '?' : '&') + 'add-to-cart=' + encodeURIComponent(product.id);
+				html += '<a class="yuniq-ai-product-btn yuniq-ai-product-btn-primary" href="' + escAttr(cartUrl) + '">' + escHtml(strings.addToCart || 'افزودن به سبد خرید') + '</a>';
+			}
 		}
 		html += '</div></div>';
 
@@ -644,11 +919,24 @@
 
 			var inputEl = field.type === 'textarea' ? document.createElement('textarea') : document.createElement('input');
 			if (field.type !== 'textarea') inputEl.type = field.type === 'email' ? 'email' : (field.type === 'tel' ? 'tel' : 'text');
+			if (field.type === 'tel' || field.type === 'email') {
+				inputEl.dir = 'ltr';
+				inputEl.autocomplete = field.type;
+				inputEl.inputMode = field.type === 'tel' ? 'tel' : 'email';
+			} else {
+				inputEl.dir = 'auto';
+			}
+			inputEl.maxLength = 1000;
 			if (field.required) inputEl.required = true;
 			row.appendChild(inputEl);
 			formEl.appendChild(row);
 			inputs[field.name] = inputEl;
 		});
+
+		var errorEl = document.createElement('div');
+		errorEl.className = 'yuniq-ai-inline-form-error';
+		errorEl.setAttribute('role', 'alert');
+		formEl.appendChild(errorEl);
 
 		var submitBtn = document.createElement('button');
 		submitBtn.type = 'submit';
@@ -662,25 +950,28 @@
 			Object.keys(inputs).forEach(function (name) { fields[name] = inputs[name].value; });
 
 			submitBtn.disabled = true;
+			errorEl.textContent = '';
 
-			fetch(restUrl + 'lead', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
-				body: JSON.stringify({ session_id: sessionId, form_key: formKey, fields: fields })
-			})
+			// Errors stay inside the form, next to the field they are about.
+			function fail(message) {
+				submitBtn.disabled = false;
+				errorEl.textContent = message;
+			}
+
+			api('lead', { method: 'POST', body: { session_id: ensureSession(), form_key: formKey, fields: fields } })
 				.then(function (res) { return res.json(); })
 				.then(function (data) {
 					if (data && data.success) {
 						formEl.innerHTML = '';
 						var done = document.createElement('div');
+						done.className = 'yuniq-ai-inline-form-done';
 						done.textContent = strings.formSubmitted || 'با تشکر! به‌زودی با شما تماس گرفته می‌شود.';
 						formEl.appendChild(done);
 					} else {
-						submitBtn.disabled = false;
-						appendNotice((data && data.error) ? data.error : TXT_GENERIC_ERROR);
+						fail((data && data.error) ? data.error : TXT_GENERIC_ERROR);
 					}
 				})
-				.catch(function () { submitBtn.disabled = false; appendNotice(TXT_NETWORK_ERROR); });
+				.catch(function () { fail(TXT_NETWORK_ERROR); });
 		});
 
 		wrap.appendChild(formEl);
@@ -703,22 +994,32 @@
 	 * the conversation and resume polling instead.
 	 */
 	function checkExistingEscalation() {
-		if (!sessionId || !liveSupport.enabled) return;
+		// Only a visitor who actually escalated pays for this request; it
+		// used to fire on every page view of every returning visitor.
+		if (!sessionId || !liveSupport.enabled || !store('get', ESCALATED_KEY)) return;
 
-		fetch(restUrl + 'conversation/' + encodeURIComponent(sessionId) + '/messages?after_id=0', {
-			headers: { 'X-WP-Nonce': nonce }
-		})
+		api('conversation/' + encodeURIComponent(sessionId) + '/messages?after_id=0')
 			.then(function (res) { return res.json(); })
 			.then(function (data) {
-				if (!data || !data.success || (data.status !== 'pending' && data.status !== 'active')) return;
+				if (!data || !data.success || (data.status !== 'pending' && data.status !== 'active')) {
+					store('del', ESCALATED_KEY);
+					return;
+				}
 
-				conversationStatus = data.status;
+				// The server copy is the complete one, so it replaces
+				// whatever this tab had restored locally.
+				restoring = true;
+				startChatUI();
+				messagesEl.innerHTML = '';
 
 				(data.messages || []).forEach(function (m) {
 					lastMessageId = Math.max(lastMessageId, parseInt(m.id, 10) || 0);
 					var el = appendMessage(m.role === 'user' ? 'user' : 'assistant', m.content);
 					if (m.role === 'agent') el.classList.add('yuniq-ai-msg-agent');
 				});
+
+				restoring = false;
+				setStatus(data.status);
 
 				appendNotice(conversationStatus === 'active'
 					? (strings.connectedToAgent || 'به کارشناس پشتیبانی متصل شدید')
@@ -728,7 +1029,14 @@
 			})
 			.catch(function () {});
 	}
+
+	restoreTranscript();
 	checkExistingEscalation();
+
+	// Catch up the moment the visitor comes back to the tab.
+	document.addEventListener('visibilitychange', function () {
+		if (!document.hidden && pollTimer) pollMessages();
+	});
 
 	/* =====================================================
 	   Chat
@@ -744,6 +1052,8 @@
 	function showError(message) {
 		hideTyping();
 		appendMessage('assistant', message).classList.add('yuniq-ai-msg-error');
+		// The failed question must not be replayed to the model next turn.
+		if (history.length && history[history.length - 1].role === 'user') history.pop();
 	}
 
 	function rememberSession(id) {
@@ -755,20 +1065,16 @@
 	function requestInit(message) {
 		return {
 			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'X-WP-Nonce': nonce
-			},
-			body: JSON.stringify({
+			body: {
 				message: message,
-				session_id: sessionId,
-				history: history.slice(0, -1)
-			})
+				session_id: ensureSession(),
+				history: history.slice(0, -1).slice(-20)
+			}
 		};
 	}
 
 	function streamMessage(message) {
-		fetch(restUrl + 'chat/stream', requestInit(message))
+		api('chat/stream', requestInit(message))
 			.then(function (res) {
 				var type = res.headers.get('Content-Type') || '';
 
@@ -811,7 +1117,10 @@
 			if (settled || !renderer) return;
 			settled = true;
 			var text = renderer.finish();
-			if (text && !errored) history.push({ role: 'assistant', content: text });
+			if (text && !errored) {
+				history.push({ role: 'assistant', content: text });
+				remember('assistant', text);
+			}
 		}
 
 		function handleEvent(payload) {
@@ -834,6 +1143,9 @@
 				renderProductCard(payload.product);
 			} else if (payload.type === 'form') {
 				renderForm(payload.form_key);
+			} else if (payload.type === 'options') {
+				settle();
+				renderOptions(payload.options);
 			} else if (payload.type === 'needs_human') {
 				settle();
 				renderNeedHumanCta();
@@ -877,7 +1189,7 @@
 	}
 
 	function blockingMessage(message) {
-		return fetch(restUrl + 'chat', requestInit(message))
+		return api('chat', requestInit(message))
 			.then(function (res) { return res.json(); })
 			.then(function (data) {
 				hideTyping();
@@ -886,9 +1198,11 @@
 				if (data && data.success && data.content) {
 					appendMessage('assistant', data.content);
 					history.push({ role: 'assistant', content: data.content });
+					remember('assistant', data.content);
 					if (data.product) renderProductCard(data.product);
 					if (data.form_key) renderForm(data.form_key);
 					if (data.needs_human) renderNeedHumanCta();
+					else renderOptions(data.options);
 				} else {
 					showError((data && data.error) ? data.error : TXT_GENERIC_ERROR);
 					if (data && data.needs_human) renderNeedHumanCta();
@@ -912,6 +1226,7 @@
 		}
 
 		appendMessage('user', message);
+		remember('user', message);
 
 		if (conversationStatus === 'pending' || conversationStatus === 'active') {
 			sendEscalatedMessage(message);
@@ -949,7 +1264,7 @@
 	if (input) {
 		input.addEventListener('input', autoGrow);
 		input.addEventListener('keydown', function (e) {
-			if (e.key === 'Enter' && !e.shiftKey) {
+			if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 				e.preventDefault();
 				sendMessage(input.value);
 			}

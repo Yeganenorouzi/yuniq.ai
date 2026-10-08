@@ -82,28 +82,43 @@ final class Repository {
 		$data['post_type']  = sanitize_key( $data['post_type'] );
 		$data['categories'] = $this->flatten_terms( $data['categories'] );
 		$data['tags']       = $this->flatten_terms( $data['tags'] );
+		$sku                = is_array( $data['metadata'] ) && ! empty( $data['metadata']['sku'] ) ? (string) $data['metadata']['sku'] : '';
 		$data['metadata']   = is_array( $data['metadata'] ) ? wp_json_encode( $data['metadata'] ) : (string) $data['metadata'];
 
 		// The normalized copy is what every search actually matches against.
 		$data['search_text'] = Text::normalize(
-			$data['title'] . ' ' . $data['categories'] . ' ' . $data['tags'] . ' ' . $data['excerpt'] . ' ' . $data['content']
+			$data['title'] . ' ' . $sku . ' ' . $data['categories'] . ' ' . $data['tags'] . ' ' . $data['excerpt'] . ' ' . $data['content']
 		);
 
-		$formats = array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' );
+		// Stamped on every pass (not only on insert), so a finished crawl can
+		// tell which rows it did not touch and prune them.
+		$data['indexed_at'] = current_time( 'mysql' );
+
+		$formats = array( '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' );
 
 		if ( ! empty( $data['post_id'] ) ) {
 			$existing = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-				$wpdb->prepare( "SELECT id FROM {$this->table} WHERE post_id = %d", $data['post_id'] )
+				$wpdb->prepare( "SELECT id FROM {$this->table} WHERE post_id = %d", $data['post_id'] ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			);
+		} else {
+			// Taxonomy terms carry no post id; without this lookup every
+			// re-crawl stored each term a second time.
+			$existing = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->prepare( "SELECT id FROM {$this->table} WHERE post_type = %s AND slug = %s AND ( post_id IS NULL OR post_id = 0 ) LIMIT 1", $data['post_type'], $data['slug'] ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			);
+		}
 
-			if ( $existing ) {
-				$wpdb->update( $this->table, $data, array( 'id' => $existing ), $formats, array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		if ( $existing ) {
+			$wpdb->update( $this->table, $data, array( 'id' => $existing ), $formats, array( '%d' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 
-				return (int) $existing;
-			}
+			return (int) $existing;
 		}
 
 		$wpdb->insert( $this->table, $data, $formats ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+
+		if ( ! $wpdb->insert_id ) {
+			\Yuniq\Ai\Support\Logger::db( sprintf( 'ایندکس «%s» در پایگاه دانش ذخیره نشد.', $data['title'] ) );
+		}
 
 		return $wpdb->insert_id ? (int) $wpdb->insert_id : false;
 	}
@@ -244,6 +259,8 @@ final class Repository {
 				$part .= 'Categories: ' . $item['categories'] . "\n";
 			}
 
+			$part .= $this->product_facts( $item );
+
 			$content = wp_strip_all_tags( isset( $item['content'] ) ? $item['content'] : '' );
 
 			$part   .= 'Content: ' . Text::truncate( $content, self::CONTEXT_CHARS ) . "\n";
@@ -252,6 +269,110 @@ final class Repository {
 		}
 
 		return implode( "\n-----\n", $parts );
+	}
+
+	/**
+	 * Price, stock and SKU lines for a product document.
+	 *
+	 * Without these the model only ever saw the product description, so it
+	 * could not answer the most common shop question: "how much is it?".
+	 *
+	 * @param array $item Knowledge base row.
+	 * @return string Empty for anything that is not a product.
+	 */
+	private function product_facts( array $item ) {
+		if ( ! isset( $item['post_type'] ) || 'product' !== $item['post_type'] || empty( $item['metadata'] ) ) {
+			return '';
+		}
+
+		$meta = json_decode( (string) $item['metadata'], true );
+
+		if ( ! is_array( $meta ) ) {
+			return '';
+		}
+
+		$facts = '';
+		$price = self::format_price( isset( $meta['price'] ) ? $meta['price'] : '' );
+		$sale  = isset( $meta['sale_price'] ) ? (string) $meta['sale_price'] : '';
+		$full  = isset( $meta['regular_price'] ) ? (string) $meta['regular_price'] : '';
+
+		if ( '' !== $price ) {
+			$facts .= 'Price: ' . $price;
+
+			if ( '' !== $sale && '' !== $full && $sale !== $full ) {
+				$facts .= ' (on sale, was ' . self::format_price( $full ) . ')';
+			}
+
+			$facts .= "\n";
+		}
+
+		if ( ! empty( $meta['stock_status'] ) ) {
+			$stock  = array(
+				'instock'     => 'in stock',
+				'outofstock'  => 'out of stock',
+				'onbackorder' => 'available on backorder',
+			);
+			$facts .= 'Stock: ' . ( isset( $stock[ $meta['stock_status'] ] ) ? $stock[ $meta['stock_status'] ] : $meta['stock_status'] ) . "\n";
+		}
+
+		if ( ! empty( $meta['sku'] ) ) {
+			$facts .= 'SKU: ' . $meta['sku'] . "\n";
+		}
+
+		return $facts;
+	}
+
+	/**
+	 * A raw price as the shop would display it, e.g. `250,000 تومان`.
+	 *
+	 * @param mixed $amount Raw numeric price from the product.
+	 * @return string Empty when there is no price.
+	 */
+	public static function format_price( $amount ) {
+		if ( '' === $amount || null === $amount || ! is_numeric( $amount ) ) {
+			return '';
+		}
+
+		if ( function_exists( 'wc_price' ) ) {
+			return trim( html_entity_decode( wp_strip_all_tags( wc_price( (float) $amount ) ), ENT_QUOTES, 'UTF-8' ) );
+		}
+
+		return number_format_i18n( (float) $amount );
+	}
+
+	/**
+	 * Remove the document stored for one post.
+	 *
+	 * @param int $post_id Source post id.
+	 * @return void
+	 */
+	public function delete_by_post_id( $post_id ) {
+		global $wpdb;
+
+		$post_id = (int) $post_id;
+
+		if ( $post_id <= 0 ) {
+			return;
+		}
+
+		if ( $wpdb->delete( $this->table, array( 'post_id' => $post_id ), array( '%d' ) ) ) { // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$this->flush_cache();
+		}
+	}
+
+	/**
+	 * Remove documents a completed crawl did not touch: deleted or
+	 * unpublished content, and anything the filters now exclude.
+	 *
+	 * @param string $before MySQL datetime the crawl started at.
+	 * @return int Rows removed.
+	 */
+	public function delete_stale( $before ) {
+		global $wpdb;
+
+		return (int) $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->prepare( "DELETE FROM {$this->table} WHERE indexed_at < %s", $before ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		);
 	}
 
 	/**

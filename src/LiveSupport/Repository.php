@@ -95,11 +95,20 @@ final class Repository {
 	 * @param string $session_id Session identifier.
 	 * @param string $name       Visitor-supplied name, optional.
 	 * @param string $contact    Visitor-supplied phone/email, optional.
-	 * @return array Updated conversation row.
+	 * @return array|null Updated conversation row, or null when it could not be stored.
 	 */
 	public function escalate( $session_id, $name = '', $contact = '' ) {
-		$conversation        = $this->get_or_create_conversation( $session_id );
+		$conversation = $this->get_or_create_conversation( $session_id );
+
+		if ( ! $conversation ) {
+			return null;
+		}
+
 		$is_first_escalation = 'bot' === $conversation['status'];
+
+		// A repeat escalation without details must not wipe the ones on file.
+		$name    = '' !== trim( (string) $name ) ? $name : $conversation['visitor_name'];
+		$contact = '' !== trim( (string) $contact ) ? $contact : $conversation['visitor_contact'];
 
 		global $wpdb;
 
@@ -199,16 +208,19 @@ final class Repository {
 		$data    = array(
 			'session_id' => sanitize_text_field( $session_id ),
 			'role'       => sanitize_key( $role ),
-			'content'    => wp_kses_post( $content ),
+			// Plain text: every reader (widget and inbox) escapes on output, and
+			// stored markup only ever showed up as literal `&amp;` entities.
+			'content'    => sanitize_textarea_field( $content ),
+			// Site time, like every other table, rather than the DB server's.
+			'created_at' => $created_at ? $created_at : current_time( 'mysql' ),
 		);
-		$formats = array( '%s', '%s', '%s' );
-
-		if ( $created_at ) {
-			$data['created_at'] = $created_at;
-			$formats[]          = '%s';
-		}
+		$formats = array( '%s', '%s', '%s', '%s' );
 
 		$wpdb->insert( $this->messages_table, $data, $formats ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+
+		if ( ! $wpdb->insert_id ) {
+			\Yuniq\Ai\Support\Logger::db( 'ذخیره پیام گفتگوی پشتیبانی انجام نشد.' );
+		}
 
 		return $wpdb->insert_id ? (int) $wpdb->insert_id : false;
 	}

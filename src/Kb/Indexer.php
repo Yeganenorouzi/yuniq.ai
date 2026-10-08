@@ -10,6 +10,7 @@ namespace Yuniq\Ai\Kb;
 
 use Yuniq\Ai\Settings;
 use Yuniq\Ai\Setup\Schema;
+use Yuniq\Ai\Support\Logger;
 use WP_Post;
 use WP_Query;
 
@@ -176,6 +177,50 @@ final class Indexer {
 	}
 
 	/**
+	 * Keep one post's document in step with the post itself, so a new or
+	 * edited product does not wait for the next full crawl.
+	 *
+	 * @param int $post_id Post id.
+	 * @return void
+	 */
+	public function sync_post( $post_id ) {
+		$post = get_post( $post_id );
+
+		if ( ! $post || ! in_array( $post->post_type, $this->resolve_content_types(), true ) ) {
+			return;
+		}
+
+		$include = $this->parse_slug_list( $this->settings->get( 'include_slugs', '' ) );
+		$exclude = $this->parse_slug_list( $this->settings->get( 'exclude_slugs', '' ) );
+
+		if ( 'publish' !== $post->post_status || '' !== $post->post_password || ! $this->passes_slug_filters( get_permalink( $post ), $include, $exclude ) ) {
+			$this->repository->delete_by_post_id( $post->ID );
+
+			return;
+		}
+
+		try {
+			$this->index_post( $post );
+		} catch ( \Throwable $e ) {
+			Logger::error( 'crawl', sprintf( 'به‌روزرسانی خودکار «%s» در پایگاه دانش انجام نشد.', $post->post_title ), array( 'error' => $e->getMessage() ) );
+
+			return;
+		}
+
+		$this->repository->flush_cache();
+	}
+
+	/**
+	 * Drop a post's document, e.g. when it is trashed or deleted.
+	 *
+	 * @param int $post_id Post id.
+	 * @return void
+	 */
+	public function forget_post( $post_id ) {
+		$this->repository->delete_by_post_id( $post_id );
+	}
+
+	/**
 	 * Mark a running crawl as stopped.
 	 *
 	 * @param int $log_id Crawl log row id.
@@ -223,6 +268,7 @@ final class Indexer {
 			array(
 				'post_type'              => $this->resolve_content_types(),
 				'post_status'            => 'publish',
+				'has_password'           => false,
 				'posts_per_page'         => $limit,
 				'offset'                 => $offset,
 				'orderby'                => 'ID',
@@ -241,8 +287,22 @@ final class Indexer {
 				continue;
 			}
 
-			$this->index_post( $post );
-			$indexed++;
+			// A shortcode or page-builder block that throws while rendering
+			// used to kill the request, and the crawl then retried the same
+			// batch forever. The post is skipped and named in the error log.
+			try {
+				$this->index_post( $post );
+				$indexed++;
+			} catch ( \Throwable $e ) {
+				Logger::error(
+					'crawl',
+					sprintf( 'ایندکس «%s» به‌خاطر خطای محتوای همان صفحه انجام نشد و از آن عبور شد.', $post->post_title ),
+					array(
+						'post_id' => $post->ID,
+						'error'   => $e->getMessage(),
+					)
+				);
+			}
 		}
 
 		return array(
@@ -336,7 +396,18 @@ final class Indexer {
 	 * @return void
 	 */
 	private function index_post( WP_Post $post ) {
+		// Shortcodes and page builders read the global post while rendering.
+		$previous        = isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null;
+		$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
+		setup_postdata( $post );
+
 		$content = apply_filters( 'the_content', $post->post_content );
+
+		$GLOBALS['post'] = $previous; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
+		if ( $previous ) {
+			setup_postdata( $previous );
+		}
+
 		$content = trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( $content ) ) );
 
 		$excerpt = $post->post_excerpt;
@@ -349,6 +420,7 @@ final class Indexer {
 		if ( $is_product ) {
 			$categories = $this->term_names( $post->ID, 'product_cat' );
 			$tags       = $this->term_names( $post->ID, 'product_tag' );
+			$content    = trim( $content . ' ' . $this->product_extras( $post->ID ) );
 		} else {
 			$cats       = get_the_category( $post->ID );
 			$categories = $cats ? wp_list_pluck( $cats, 'name' ) : array();
@@ -382,6 +454,7 @@ final class Indexer {
 			array(
 				'post_type'              => $this->resolve_content_types(),
 				'post_status'            => 'publish',
+				'has_password'           => false,
 				'posts_per_page'         => 1,
 				'fields'                 => 'ids',
 				'no_found_rows'          => false,
@@ -486,6 +559,59 @@ final class Indexer {
 	}
 
 	/**
+	 * Attributes and approved reviews of a product, when the matching
+	 * crawler options are switched on.
+	 *
+	 * @param int $post_id Product id.
+	 * @return string
+	 */
+	private function product_extras( $post_id ) {
+		$extras  = '';
+		$product = wc_get_product( $post_id );
+
+		if ( ! $product ) {
+			return $extras;
+		}
+
+		if ( $product->get_short_description() ) {
+			$extras .= ' ' . wp_strip_all_tags( $product->get_short_description() );
+		}
+
+		if ( $this->settings->get( 'wc_attributes' ) ) {
+			foreach ( $product->get_attributes() as $attribute ) {
+				if ( ! is_object( $attribute ) || ! method_exists( $attribute, 'get_name' ) ) {
+					continue;
+				}
+
+				$values = $attribute->is_taxonomy()
+					? wc_get_product_terms( $post_id, $attribute->get_name(), array( 'fields' => 'names' ) )
+					: $attribute->get_options();
+
+				if ( $values ) {
+					$extras .= ' ' . wc_attribute_label( $attribute->get_name() ) . ': ' . implode( '، ', array_map( 'strval', (array) $values ) ) . '.';
+				}
+			}
+		}
+
+		if ( $this->settings->get( 'wc_reviews' ) ) {
+			$reviews = get_comments(
+				array(
+					'post_id' => $post_id,
+					'status'  => 'approve',
+					'type'    => 'review',
+					'number'  => 5,
+				)
+			);
+
+			foreach ( (array) $reviews as $review ) {
+				$extras .= ' ' . __( 'نظر خریدار', 'yuniq-ai' ) . ': ' . wp_trim_words( wp_strip_all_tags( $review->comment_content ), 40, '…' );
+			}
+		}
+
+		return trim( (string) preg_replace( '/\s+/u', ' ', $extras ) );
+	}
+
+	/**
 	 * Apply the include/exclude path filters to a URL.
 	 *
 	 * @param string $url     Permalink or term link.
@@ -517,11 +643,9 @@ final class Indexer {
 	 */
 	private function matches_any_slug( $path, array $slugs ) {
 		foreach ( $slugs as $slug ) {
-			if ( $path === $slug || false !== strpos( $path, $slug ) ) {
-				return true;
-			}
-
-			if ( false !== strpos( $path, rtrim( $slug, '/' ) ) ) {
+			// Both sides are wrapped in slashes, so `/cart/` matches the cart
+			// page but no longer every URL that merely starts with "cart".
+			if ( false !== strpos( $path, $slug ) ) {
 				return true;
 			}
 		}
@@ -592,13 +716,16 @@ final class Indexer {
 			)
 		);
 
-		$stored                 = get_option( Settings::OPTION_KEY, array() );
-		$stored                 = is_array( $stored ) ? $stored : array();
-		$stored['crawl_status'] = 'completed';
-		$stored['last_crawl']   = current_time( 'mysql' );
-		update_option( Settings::OPTION_KEY, $stored );
+		// Whatever this run did not re-index no longer exists on the site (or
+		// is excluded now), so it must not keep feeding answers. The settings
+		// option is deliberately left alone here: writing it re-ran the form
+		// sanitizer over the stored values and stripped backslashes from the
+		// custom CSS and prompt after every crawl.
+		$log = $this->get_log( $log_id );
 
-		$this->settings->flush();
+		if ( $log && ! empty( $log['started_at'] ) ) {
+			$this->repository->delete_stale( $log['started_at'] );
+		}
 
 		// Answers built from the old index are no longer correct.
 		$this->repository->flush_cache();

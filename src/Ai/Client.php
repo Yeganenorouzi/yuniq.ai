@@ -13,6 +13,8 @@ use Yuniq\Ai\Contracts\AiProviderInterface;
 use Yuniq\Ai\Contracts\StreamingProviderInterface;
 use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\Settings;
+use Yuniq\Ai\Support\Logger;
+use Yuniq\Ai\Support\Text;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -35,6 +37,16 @@ final class Client {
 	 * waiting time before the first word appears.
 	 */
 	const CONTEXT_DOCUMENTS = 5;
+
+	/**
+	 * Longest replayed history turn, in characters.
+	 */
+	const HISTORY_TURN_CHARS = 2000;
+
+	/**
+	 * Most follow-up options shown under one reply.
+	 */
+	const MAX_OPTIONS = 4;
 
 	/**
 	 * Plugin settings.
@@ -83,6 +95,7 @@ final class Client {
 		$result['provider'] = $this->provider()->get_id();
 
 		$this->resolve_directives( $result );
+		$this->report( $result );
 
 		return $result;
 	}
@@ -123,6 +136,12 @@ final class Client {
 				$pending = '';
 			}
 
+			// A delta can end on the first bracket of a directive.
+			if ( '' !== $safe && '[' === substr( $safe, -1 ) ) {
+				$safe    = substr( $safe, 0, -1 );
+				$pending = '[' . $pending;
+			}
+
 			if ( '' !== $safe ) {
 				call_user_func( $on_chunk, $safe );
 			}
@@ -147,8 +166,42 @@ final class Client {
 		$result['provider'] = $provider->get_id();
 
 		$this->resolve_directives( $result );
+		$this->report( $result );
 
 		return $result;
+	}
+
+	/**
+	 * Option holding the time of the last answer the provider gave.
+	 */
+	const LAST_SUCCESS_OPTION = 'yuniq_ai_last_success';
+
+	/**
+	 * Put a failed turn in the error log, and note a successful one so the
+	 * status screen can say when the assistant last worked.
+	 *
+	 * @param array $result Provider result.
+	 * @return void
+	 */
+	private function report( array $result ) {
+		if ( ! empty( $result['success'] ) ) {
+			// At most one write every ten minutes, not one per message.
+			if ( time() - (int) get_option( self::LAST_SUCCESS_OPTION, 0 ) > 600 ) {
+				update_option( self::LAST_SUCCESS_OPTION, time(), false );
+			}
+
+			return;
+		}
+
+		Logger::error(
+			'ai',
+			'سرویس هوش مصنوعی پاسخ نداد: ' . ( isset( $result['error'] ) ? $result['error'] : 'خطای ناشناخته' ),
+			array(
+				'model' => (string) $this->settings->get( 'model' ),
+				'host'  => (string) wp_parse_url( (string) $this->settings->get( 'api_endpoint' ), PHP_URL_HOST ),
+				'code'  => isset( $result['code'] ) ? (int) $result['code'] : '',
+			)
+		);
 	}
 
 	/**
@@ -233,10 +286,23 @@ final class Client {
 		$limit = (int) $this->settings->get( 'history_limit', self::HISTORY_LIMIT );
 
 		foreach ( $limit > 0 ? array_slice( $history, -$limit ) : array() as $turn ) {
-			if ( isset( $turn['role'], $turn['content'] ) ) {
+			// The history comes from the browser: only the two conversational
+			// roles are accepted, so a visitor cannot smuggle in a `system`
+			// message, and each turn is capped like a live message is.
+			if ( ! is_array( $turn ) || ! isset( $turn['role'], $turn['content'] ) || ! is_string( $turn['content'] ) ) {
+				continue;
+			}
+
+			if ( ! in_array( $turn['role'], array( 'user', 'assistant' ), true ) ) {
+				continue;
+			}
+
+			$content = Text::truncate( sanitize_textarea_field( $turn['content'] ), self::HISTORY_TURN_CHARS, '' );
+
+			if ( '' !== $content ) {
 				$messages[] = array(
-					'role'    => sanitize_text_field( $turn['role'] ),
-					'content' => sanitize_textarea_field( $turn['content'] ),
+					'role'    => $turn['role'],
+					'content' => $content,
 				);
 			}
 		}
@@ -261,13 +327,17 @@ final class Client {
 		$prompt .= "\n\nYou are the official AI assistant of this website. Rules:\n"
 			. "1) ALWAYS prefer the Website Knowledge Base below over general knowledge.\n"
 			. "2) When answering, use facts from the knowledge base (titles, content, categories).\n"
-			. "3) LINKS POLICY: Do NOT include URLs or links in normal answers. Only when the user explicitly asks for a link (e.g. «لینک بده», «آدرس صفحه», «link», «URL»), then provide the relevant full URL from the knowledge base as a markdown link [title](url). Otherwise answer with text only, no links.\n"
-			. "4) Answer in the same language as the user (Persian if they write in Persian).\n"
-			. "5) Be concise, helpful, and professional. Keep answers short unless asked for detail.\n"
-			. "6) If knowledge base has no match, say so briefly and still try to help.\n"
+			. '3) ' . $this->links_rule() . "\n"
+			. '4) ' . $this->language_rule() . "\n"
+			. '5) ' . $this->style_rule() . "\n"
+			. "6) If knowledge base has no match, say so briefly and still try to help. Never invent prices, stock or policies that are not in the knowledge base.\n"
 			. "7) HANDOFF: if you genuinely cannot help (the knowledge base has nothing relevant and the question needs a human, or the visitor is frustrated/asks for a human), write your best short reply and then add a new line containing exactly [[NEED_HUMAN]] and nothing else on that line. Never mention this token to the user, never explain it — it is stripped before they see your message.\n"
 			. "8) PRODUCT CARD: when you recommend one specific product from the knowledge base, add a new line at the end containing exactly [[PRODUCT:ID]] (replace ID with the numeric id shown for that product below). Only ever include one per reply, and only when a specific product is clearly the right recommendation.\n"
 			. "9) LEAD FORM: if one of the \"Available forms\" listed below clearly matches what the visitor wants (e.g. they ask for a consultation/quote/callback), add a new line at the end containing exactly [[FORM:key]] (replace key with that form's key). Only ever include one per reply.\n";
+
+		if ( $this->settings->get( 'suggest_options', true ) ) {
+			$prompt .= '10) FOLLOW-UP OPTIONS: when it genuinely helps the visitor choose a next step (picking between products/services, or an obvious next question), add a final line containing exactly [[OPTIONS:first|second|third]] with 2 to ' . self::MAX_OPTIONS . " short choices (max 5 words each, in the visitor's language, written as the visitor would say them). Skip it when no natural choices exist. Never mention this token.\n";
+		}
 
 		$prompt .= $this->build_forms_hint();
 
@@ -287,6 +357,60 @@ final class Client {
 		 * @param string $context      Retrieved knowledge base context.
 		 */
 		return (string) apply_filters( 'yuniq_ai_system_prompt', $prompt, $user_message, $context );
+	}
+
+	/**
+	 * Link behaviour chosen on the settings screen.
+	 *
+	 * @return string
+	 */
+	private function links_rule() {
+		if ( 'helpful' === $this->settings->get( 'links_policy', 'on_request' ) ) {
+			return 'LINKS POLICY: when a page from the knowledge base is directly relevant, add its link once as a markdown link [title](url). Only ever use URLs that appear in the knowledge base; never invent one.';
+		}
+
+		return 'LINKS POLICY: Do NOT include URLs or links in normal answers. Only when the user explicitly asks for a link (e.g. «لینک بده», «آدرس صفحه», «link», «URL»), then provide the relevant full URL from the knowledge base as a markdown link [title](url). Otherwise answer with text only, no links.';
+	}
+
+	/**
+	 * Reply language chosen on the settings screen.
+	 *
+	 * @return string
+	 */
+	private function language_rule() {
+		switch ( $this->settings->get( 'reply_language', 'auto' ) ) {
+			case 'fa':
+				return 'Always answer in Persian (Farsi), whatever language the user writes in.';
+			case 'en':
+				return 'Always answer in English, whatever language the user writes in.';
+		}
+
+		return 'Answer in the same language as the user (Persian if they write in Persian).';
+	}
+
+	/**
+	 * Tone and length chosen on the settings screen.
+	 *
+	 * @return string
+	 */
+	private function style_rule() {
+		$tones = array(
+			'friendly' => 'Tone: warm, friendly and conversational, like a helpful colleague.',
+			'formal'   => 'Tone: formal, respectful and precise.',
+			'sales'    => 'Tone: enthusiastic and persuasive; highlight benefits and gently guide the visitor to buy or request a consultation, without being pushy.',
+			'expert'   => 'Tone: knowledgeable and exact, like a specialist explaining to a customer.',
+		);
+		$lengths = array(
+			'short'    => 'Length: very short, 1 to 3 sentences, unless the user asks for detail.',
+			'medium'   => 'Length: concise, one short paragraph or a few bullet-like lines.',
+			'detailed' => 'Length: complete and well explained, but never padded.',
+		);
+
+		$tone   = (string) $this->settings->get( 'reply_tone', 'friendly' );
+		$length = (string) $this->settings->get( 'reply_length', 'short' );
+
+		return ( isset( $tones[ $tone ] ) ? $tones[ $tone ] : $tones['friendly'] )
+			. ' ' . ( isset( $lengths[ $length ] ) ? $lengths[ $length ] : $lengths['short'] );
 	}
 
 	/**
@@ -337,30 +461,34 @@ final class Client {
 
 		$result['needs_human'] = empty( $result['success'] ) ? true : $flags['needs_human'];
 		$result['form_key']    = $flags['form_key'];
+		$result['options']     = $flags['options'];
 		$result['product']     = $flags['product_id'] ? $this->build_product_payload( $flags['product_id'] ) : null;
 	}
 
 	/**
-	 * Find and remove every `[[NEED_HUMAN]]`, `[[PRODUCT:id]]` and
-	 * `[[FORM:key]]` directive in a piece of text.
+	 * Find and remove every `[[NEED_HUMAN]]`, `[[PRODUCT:id]]`,
+	 * `[[FORM:key]]` and `[[OPTIONS:a|b]]` directive in a piece of text.
 	 *
 	 * @param string $content Text to scan, mutated in place with directives removed.
-	 * @return array{needs_human:bool, product_id:int|null, form_key:string|null}
+	 * @return array{needs_human:bool, product_id:int|null, form_key:string|null, options:string[]}
 	 */
 	private function extract_directives( &$content ) {
 		$flags = array(
 			'needs_human' => false,
 			'product_id'  => null,
 			'form_key'    => null,
+			'options'     => array(),
 		);
 
 		$content = (string) preg_replace_callback(
-			'/\n?\[\[(NEED_HUMAN|PRODUCT:(\d+)|FORM:([a-z0-9_-]+))\]\]/i',
+			'/\n?\[\[(NEED_HUMAN|PRODUCT:(\d+)|FORM:([a-z0-9_-]+)|OPTIONS:([^\[\]]+))\]\]/iu',
 			function ( $m ) use ( &$flags ) {
 				if ( 0 === stripos( $m[1], 'PRODUCT:' ) ) {
 					$flags['product_id'] = isset( $m[2] ) ? (int) $m[2] : null;
 				} elseif ( 0 === stripos( $m[1], 'FORM:' ) ) {
 					$flags['form_key'] = isset( $m[3] ) ? $m[3] : null;
+				} elseif ( 0 === stripos( $m[1], 'OPTIONS:' ) ) {
+					$flags['options'] = $this->parse_options( isset( $m[4] ) ? $m[4] : '' );
 				} else {
 					$flags['needs_human'] = true;
 				}
@@ -371,6 +499,30 @@ final class Client {
 		);
 
 		return $flags;
+	}
+
+	/**
+	 * Turn the body of an `[[OPTIONS:a|b|c]]` directive into clean labels.
+	 *
+	 * @param string $raw Pipe separated choices as written by the model.
+	 * @return string[]
+	 */
+	private function parse_options( $raw ) {
+		$options = array();
+
+		foreach ( explode( '|', (string) $raw ) as $option ) {
+			$option = Text::truncate( trim( sanitize_text_field( $option ) ), 60, '…' );
+
+			if ( '' !== $option && ! in_array( $option, $options, true ) ) {
+				$options[] = $option;
+			}
+
+			if ( count( $options ) >= self::MAX_OPTIONS ) {
+				break;
+			}
+		}
+
+		return $options;
 	}
 
 	/**
@@ -397,15 +549,21 @@ final class Client {
 		$metadata = json_decode( (string) $row['metadata'], true );
 		$metadata = is_array( $metadata ) ? $metadata : array();
 
+		$stock = isset( $metadata['stock_status'] ) ? (string) $metadata['stock_status'] : '';
+		$type  = isset( $metadata['type'] ) ? (string) $metadata['type'] : 'simple';
+
 		return array(
 			'id'            => (int) $product_id,
 			'title'         => $row['title'],
 			'url'           => $row['url'],
 			'image'         => isset( $metadata['image'] ) ? $metadata['image'] : '',
-			'price'         => isset( $metadata['price'] ) ? $metadata['price'] : '',
-			'regular_price' => isset( $metadata['regular_price'] ) ? $metadata['regular_price'] : '',
-			'sale_price'    => isset( $metadata['sale_price'] ) ? $metadata['sale_price'] : '',
-			'stock_status'  => isset( $metadata['stock_status'] ) ? $metadata['stock_status'] : '',
+			'price'         => KnowledgeBase::format_price( isset( $metadata['price'] ) ? $metadata['price'] : '' ),
+			'regular_price' => KnowledgeBase::format_price( isset( $metadata['regular_price'] ) ? $metadata['regular_price'] : '' ),
+			'sale_price'    => KnowledgeBase::format_price( isset( $metadata['sale_price'] ) ? $metadata['sale_price'] : '' ),
+			'stock_status'  => $stock,
+			// Only a simple, in-stock product can go straight into the cart;
+			// a variable one needs its options chosen on the product page.
+			'purchasable'   => 'simple' === $type && 'outofstock' !== $stock,
 		);
 	}
 }

@@ -16,6 +16,7 @@ use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\LiveSupport\Repository as LiveSupport;
 use Yuniq\Ai\Settings;
 use Yuniq\Ai\Support\Assets;
+use Yuniq\Ai\Support\Logger;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -45,6 +46,16 @@ final class AdminPages implements HookableInterface {
 	 * Live support inbox screen slug.
 	 */
 	const LIVE_SUPPORT_SLUG = 'yuniq-ai-live-support';
+
+	/**
+	 * Status and error log screen slug.
+	 */
+	const STATUS_SLUG = 'yuniq-ai-status';
+
+	/**
+	 * Setup guide screen slug.
+	 */
+	const GUIDE_SLUG = 'yuniq-ai-guide';
 
 	/**
 	 * Capability required for every screen and action.
@@ -87,6 +98,13 @@ final class AdminPages implements HookableInterface {
 	private $live_support;
 
 	/**
+	 * Setup progress and system checks.
+	 *
+	 * @var Health
+	 */
+	private $health;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Settings      $settings       Plugin settings.
@@ -94,8 +112,10 @@ final class AdminPages implements HookableInterface {
 	 * @param Indexer       $indexer        Content indexer.
 	 * @param Analytics     $analytics      Conversation log.
 	 * @param LiveSupport   $live_support   Live-support conversations.
+	 * @param Health        $health         Setup progress and system checks.
 	 */
-	public function __construct( Settings $settings, KnowledgeBase $knowledge_base, Indexer $indexer, Analytics $analytics, LiveSupport $live_support ) {
+	public function __construct( Settings $settings, KnowledgeBase $knowledge_base, Indexer $indexer, Analytics $analytics, LiveSupport $live_support, Health $health ) {
+		$this->health         = $health;
 		$this->settings       = $settings;
 		$this->knowledge_base = $knowledge_base;
 		$this->indexer        = $indexer;
@@ -164,6 +184,71 @@ final class AdminPages implements HookableInterface {
 			self::LIVE_SUPPORT_SLUG,
 			array( $this, 'render_live_support_page' )
 		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			__( 'وضعیت و خطاها', 'yuniq-ai' ),
+			__( 'وضعیت و خطاها', 'yuniq-ai' ) . $this->count_badge( Logger::unseen() ),
+			self::CAPABILITY,
+			self::STATUS_SLUG,
+			array( $this, 'render_status_page' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			__( 'راهنما', 'yuniq-ai' ),
+			__( 'راهنما', 'yuniq-ai' ),
+			self::CAPABILITY,
+			self::GUIDE_SLUG,
+			array( $this, 'render_guide_page' )
+		);
+	}
+
+	/**
+	 * A WP-core-style count bubble for a menu label.
+	 *
+	 * @param int $count Number to show.
+	 * @return string Empty for zero.
+	 */
+	private function count_badge( $count ) {
+		$count = (int) $count;
+
+		return $count ? sprintf( ' <span class="update-plugins count-%1$d"><span class="update-count">%1$d</span></span>', $count ) : '';
+	}
+
+	/**
+	 * Render the status and error log screen.
+	 *
+	 * @return void
+	 */
+	public function render_status_page() {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		$checks  = $this->health->checks();
+		$report  = $this->health->report();
+		$entries = Logger::all();
+
+		// Opening the screen is what "seeing" the errors means.
+		Logger::mark_seen();
+
+		require YUNIQ_AI_PATH . 'admin/views/status-page.php';
+	}
+
+	/**
+	 * Render the setup guide.
+	 *
+	 * @return void
+	 */
+	public function render_guide_page() {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		$presets = Presets::all();
+
+		require YUNIQ_AI_PATH . 'admin/views/guide-page.php';
 	}
 
 	/**
@@ -173,13 +258,18 @@ final class AdminPages implements HookableInterface {
 	 * @return string Empty when there is nothing pending.
 	 */
 	private function pending_badge() {
+		// No handoff, no pending conversations — and no query on every admin page.
+		if ( ! $this->settings->get( 'live_support_enabled' ) ) {
+			return '';
+		}
+
 		$count = $this->live_support->count_open();
 
 		if ( ! $count ) {
 			return '';
 		}
 
-		return sprintf( ' <span class="update-plugins count-%1$d"><span class="update-count">%1$d</span></span>', $count );
+		return $this->count_badge( $count );
 	}
 
 	/**
@@ -234,13 +324,19 @@ final class AdminPages implements HookableInterface {
 			Assets::version( 'assets/css/admin.css' )
 		);
 
-		wp_enqueue_style( 'wp-color-picker' );
-		wp_enqueue_media();
+		// The colour picker and the media library are only used on the
+		// settings screen; the other three screens skip both.
+		$is_settings = isset( $_GET['page'] ) && self::MENU_SLUG === sanitize_key( wp_unslash( $_GET['page'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+
+		if ( $is_settings ) {
+			wp_enqueue_style( 'wp-color-picker' );
+			wp_enqueue_media();
+		}
 
 		wp_enqueue_script(
 			'yuniq-ai-admin',
 			YUNIQ_AI_URL . 'assets/js/admin.js',
-			array( 'jquery', 'wp-color-picker' ),
+			$is_settings ? array( 'jquery', 'wp-color-picker' ) : array( 'jquery' ),
 			Assets::version( 'assets/js/admin.js' ),
 			true
 		);
@@ -252,6 +348,7 @@ final class AdminPages implements HookableInterface {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( Ajax\CrawlController::NONCE_ACTION ),
 				'presets' => Presets::all(),
+				'restUrl' => esc_url_raw( rest_url( 'yuniq-ai/v1/config' ) ),
 				'i18n'    => array(
 					'testing'           => __( 'در حال ارسال یک پیام آزمایشی...', 'yuniq-ai' ),
 					'loadingModels'     => __( 'در حال دریافت فهرست مدل‌ها...', 'yuniq-ai' ),
@@ -285,6 +382,21 @@ final class AdminPages implements HookableInterface {
 					'lsStatusPending'   => __( 'در انتظار', 'yuniq-ai' ),
 					'lsStatusActive'    => __( 'در حال گفتگو', 'yuniq-ai' ),
 					'lsStatusResolved'  => __( 'بسته‌شده', 'yuniq-ai' ),
+					'lsAnonymous'       => __( 'بازدیدکننده ناشناس', 'yuniq-ai' ),
+					'lsNoLeads'         => __( 'هنوز سرنخی ثبت نشده است.', 'yuniq-ai' ),
+					'lsRoleUser'        => __( 'بازدیدکننده', 'yuniq-ai' ),
+					'lsRoleBot'         => __( 'دستیار هوشمند', 'yuniq-ai' ),
+					'lsRoleAgent'       => __( 'کارشناس', 'yuniq-ai' ),
+					'unsaved'           => __( 'تغییرات ذخیره‌نشده دارید', 'yuniq-ai' ),
+					'confirmClearLog'   => __( 'همه موارد گزارش خطا پاک شود؟', 'yuniq-ai' ),
+					'copied'            => __( 'کپی شد', 'yuniq-ai' ),
+					'sending'           => __( 'در حال ارسال...', 'yuniq-ai' ),
+					'restOk'            => __( 'ارتباط ویجت با سایت برقرار است', 'yuniq-ai' ),
+					'restOkText'        => __( 'مسیر REST افزونه از مرورگر در دسترس است.', 'yuniq-ai' ),
+					'restFail'          => __( 'ویجت نمی‌تواند با سایت ارتباط بگیرد', 'yuniq-ai' ),
+					'restFailText'      => __( 'مسیر REST افزونه مسدود است. معمولاً یک افزونه امنیتی یا فایروال، REST API را برای کاربران مهمان بسته است؛ مسیر /wp-json/yuniq-ai/ را در آن مجاز کنید.', 'yuniq-ai' ),
+					'insecureEndpoint'  => __( 'این آدرس با http شروع می‌شود؛ کلید API بدون رمز فرستاده می‌شود. تا حد امکان از https استفاده کنید.', 'yuniq-ai' ),
+					'saving'            => __( 'در حال ذخیره...', 'yuniq-ai' ),
 				),
 			)
 		);
@@ -300,7 +412,8 @@ final class AdminPages implements HookableInterface {
 			return;
 		}
 
-		$settings = $this->settings->all();
+		$settings    = $this->settings->all();
+		$setup_steps = $this->health->setup_steps();
 
 		require YUNIQ_AI_PATH . 'admin/views/settings-page.php';
 	}

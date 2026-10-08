@@ -12,6 +12,7 @@ use Yuniq\Ai\Admin\AdminPages;
 use Yuniq\Ai\Contracts\HookableInterface;
 use Yuniq\Ai\LiveSupport\LeadRepository;
 use Yuniq\Ai\LiveSupport\Repository as LiveSupport;
+use Yuniq\Ai\Support\Text;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -73,9 +74,14 @@ final class LiveSupportController implements HookableInterface {
 
 		$status = isset( $_POST['status'] ) ? sanitize_key( wp_unslash( $_POST['status'] ) ) : '';
 
-		wp_send_json_success(
-			array( 'conversations' => $this->live_support->get_conversations( $status ? $status : null ) )
-		);
+		$conversations = $this->live_support->get_conversations( $status ? $status : null );
+
+		foreach ( $conversations as &$conversation ) {
+			$conversation['time_label'] = Text::human_date( $conversation['last_message_at'] ? $conversation['last_message_at'] : $conversation['created_at'] );
+		}
+		unset( $conversation );
+
+		wp_send_json_success( array( 'conversations' => $conversations ) );
 	}
 
 	/**
@@ -116,7 +122,17 @@ final class LiveSupportController implements HookableInterface {
 
 		$conversation = $this->live_support->get_conversation( $session_id );
 
-		if ( $conversation && 'pending' === $conversation['status'] ) {
+		if ( ! $conversation ) {
+			wp_send_json_error( array( 'message' => __( 'این گفتگو یافت نشد.', 'yuniq-ai' ) ), 404 );
+		}
+
+		// A closed conversation is no longer being read by the visitor, so
+		// a reply there would vanish without anyone ever seeing it.
+		if ( 'resolved' === $conversation['status'] ) {
+			wp_send_json_error( array( 'message' => __( 'این گفتگو بسته شده است و بازدیدکننده دیگر پیام را نمی‌بیند.', 'yuniq-ai' ) ), 409 );
+		}
+
+		if ( 'pending' === $conversation['status'] ) {
 			$this->live_support->claim( $session_id, get_current_user_id() );
 		}
 

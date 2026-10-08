@@ -69,7 +69,7 @@ final class Presets {
 			'anthropic'  => array(
 				'label'    => 'Anthropic (Claude)',
 				'endpoint' => 'https://api.anthropic.com/v1/chat/completions',
-				'models'   => array( 'claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5' ),
+				'models'   => array( 'claude-haiku-4-5', 'claude-sonnet-5-5', 'claude-opus-5-5' ),
 				'key_url'  => 'https://console.anthropic.com/settings/keys',
 				'note'     => __( 'از لایه سازگار با OpenAI در API رسمی Claude استفاده می‌شود. برای پشتیبانی سایت، مدل Haiku سریع و کم‌هزینه است.', 'yuniq-ai' ),
 			),

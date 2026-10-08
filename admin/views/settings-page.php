@@ -10,6 +10,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $s       = $settings;
+
+// Setup progress for the header and the checklist.
+$yq_done = 0;
+foreach ( $setup_steps as $yq_step ) {
+	$yq_done += $yq_step['done'] ? 1 : 0;
+}
+$yq_ready   = count( $setup_steps ) === $yq_done;
+$yq_percent = (int) round( 100 * $yq_done / max( 1, count( $setup_steps ) ) );
 $has_woo = class_exists( 'WooCommerce' );
 
 /**
@@ -45,6 +53,28 @@ $yq_range = function ( $key, $min, $max, $step, $unit ) use ( $s ) {
 	<?php
 };
 
+/**
+ * Print one fixed-choice setting as a row of pickable cards.
+ *
+ * @param string $key Setting name; its choices come from Settings::choices().
+ */
+$yq_options = function ( $key ) use ( $s ) {
+	$current = isset( $s[ $key ] ) ? $s[ $key ] : '';
+	?>
+	<div class="yq-options" role="radiogroup">
+		<?php foreach ( \Yuniq\Ai\Settings::choices( $key ) as $value => $choice ) : ?>
+			<label class="yq-option">
+				<input type="radio" name="yuniq_ai_settings[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $value ); ?>" <?php checked( $current, $value ); ?> />
+				<span class="yq-option-box">
+					<strong><?php echo esc_html( $choice[0] ); ?></strong>
+					<small><?php echo esc_html( $choice[1] ); ?></small>
+				</span>
+			</label>
+		<?php endforeach; ?>
+	</div>
+	<?php
+};
+
 // Values the "back to default" button restores on the Design tab.
 $yq_design_defaults = array_intersect_key(
 	\Yuniq\Ai\Settings::defaults(),
@@ -64,11 +94,47 @@ $yq_design_defaults = array_intersect_key(
 		<div class="yuniq-ai-header-brand">
 			<span class="yuniq-ai-logo">✦</span>
 			<div>
-				<h1>تنظیمات دستیار هوشمند</h1>
-				<p class="yuniq-ai-subtitle">پیکربندی کامل دستیار هوش مصنوعی · توسعه‌یافته توسط یگانه نوروزی</p>
+				<h1>دستیار هوشمند Yuniq.ai</h1>
+				<p class="yuniq-ai-subtitle">دستیاری که از محتوای خودِ سایت شما پاسخ می‌دهد · توسعه‌یافته توسط یگانه نوروزی</p>
 			</div>
 		</div>
+		<div class="yq-hero-chips">
+			<span class="yq-chip <?php echo $yq_ready ? 'yq-chip-ok' : 'yq-chip-warn'; ?>"><?php echo $yq_ready ? 'آماده به کار' : 'راه‌اندازی ناتمام'; ?></span>
+			<a class="yq-chip yq-chip-link" href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-guide' ) ); ?>">راهنما</a>
+			<a class="yq-chip yq-chip-link" href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-status' ) ); ?>">وضعیت و خطاها</a>
+		</div>
 	</div>
+
+	<?php if ( ! $yq_ready ) : ?>
+		<div class="yuniq-ai-card yq-setup">
+			<div class="yq-card-head">
+				<div>
+					<h2>راه‌اندازی در ۴ قدم</h2>
+					<p class="description"><?php echo esc_html( number_format_i18n( $yq_done ) ); ?> از <?php echo esc_html( number_format_i18n( count( $setup_steps ) ) ); ?> قدم انجام شده است.</p>
+				</div>
+				<div class="yq-setup-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr( $yq_percent ); ?>"><span style="width:<?php echo esc_attr( $yq_percent ); ?>%"></span></div>
+			</div>
+			<ol class="yq-setup-steps">
+				<?php
+				$yq_next_shown = false;
+				foreach ( $setup_steps as $yq_step ) :
+					$yq_is_next    = ! $yq_step['done'] && ! $yq_next_shown;
+					$yq_next_shown = $yq_next_shown || $yq_is_next;
+					?>
+					<li class="<?php echo esc_attr( $yq_step['done'] ? 'is-done' : ( $yq_is_next ? 'is-next' : '' ) ); ?>">
+						<span class="yq-setup-mark" aria-hidden="true"></span>
+						<div>
+							<strong><?php echo esc_html( $yq_step['title'] ); ?></strong>
+							<p><?php echo esc_html( $yq_step['text'] ); ?></p>
+							<?php if ( $yq_is_next ) : ?>
+								<a class="button button-primary button-small yq-setup-go" href="<?php echo esc_url( $yq_step['url'] ); ?>"><?php echo esc_html( $yq_step['action'] ); ?></a>
+							<?php endif; ?>
+						</div>
+					</li>
+				<?php endforeach; ?>
+			</ol>
+		</div>
+	<?php endif; ?>
 
 	<?php settings_errors(); ?>
 
@@ -78,12 +144,13 @@ $yq_design_defaults = array_intersect_key(
 
 		<div class="yuniq-ai-tabs">
 			<nav class="yuniq-ai-tab-nav">
-				<button type="button" class="yuniq-ai-tab-btn active" data-tab="general">عمومی</button>
-				<button type="button" class="yuniq-ai-tab-btn" data-tab="ai">API هوش مصنوعی</button>
-				<button type="button" class="yuniq-ai-tab-btn" data-tab="crawler">خزنده محتوا</button>
-				<button type="button" class="yuniq-ai-tab-btn" data-tab="appearance">طراحی</button>
-				<button type="button" class="yuniq-ai-tab-btn" data-tab="display">نمایش و پیشرفته</button>
-				<button type="button" class="yuniq-ai-tab-btn" data-tab="live-support">پشتیبانی زنده</button>
+				<button type="button" class="yuniq-ai-tab-btn active" data-tab="general"><span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>عمومی</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="ai"><span class="dashicons dashicons-superhero" aria-hidden="true"></span>هوش مصنوعی و پاسخ‌ها</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="crawler"><span class="dashicons dashicons-search" aria-hidden="true"></span>خزنده محتوا</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="appearance"><span class="dashicons dashicons-art" aria-hidden="true"></span>طراحی</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="display"><span class="dashicons dashicons-visibility" aria-hidden="true"></span>نمایش و پیشرفته</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="live-support"><span class="dashicons dashicons-businessperson" aria-hidden="true"></span>پشتیبانی زنده</button>
+				<button type="button" class="yuniq-ai-tab-btn" data-tab="security"><span class="dashicons dashicons-shield" aria-hidden="true"></span>امنیت</button>
 			</nav>
 
 			<!-- عمومی -->
@@ -110,6 +177,7 @@ $yq_design_defaults = array_intersect_key(
 							<th scope="row">پیام خوش‌آمدگویی</th>
 							<td>
 								<textarea name="yuniq_ai_settings[welcome_message]" rows="2" class="large-text"><?php echo esc_textarea( isset( $s['welcome_message'] ) ? $s['welcome_message'] : '' ); ?></textarea>
+								<p class="description">اولین پیام دستیار در شروع هر گفتگو. خالی = بدون پیام خوش‌آمد.</p>
 							</td>
 						</tr>
 						<tr>
@@ -131,48 +199,55 @@ $yq_design_defaults = array_intersect_key(
 							</td>
 						</tr>
 						<tr>
-							<th scope="row">متن پیشنهاد (چیپ)</th>
+							<th scope="row">راهنمای زیر گزینه‌ها</th>
 							<td>
 								<input type="text" name="yuniq_ai_settings[suggestion_text]" value="<?php echo esc_attr( isset( $s['suggestion_text'] ) ? $s['suggestion_text'] : '' ); ?>" class="large-text" />
+								<p class="description">یک خط کوچک زیر گزینه‌های شروع گفتگو. خالی = نمایش داده نمی‌شود.</p>
 							</td>
 						</tr>
 						<tr>
 							<th scope="row">لوگوی هدر</th>
 							<td>
-								<input type="url" name="yuniq_ai_settings[logo_url]" id="yuniq-ai-logo-url" value="<?php echo esc_attr( isset( $s['logo_url'] ) ? $s['logo_url'] : '' ); ?>" class="regular-text" />
-								<button type="button" class="button" id="yuniq-ai-upload-logo">آپلود لوگو</button>
+								<div class="yuniq-ai-inline">
+									<input type="url" name="yuniq_ai_settings[logo_url]" id="yuniq-ai-logo-url" value="<?php echo esc_attr( isset( $s['logo_url'] ) ? $s['logo_url'] : '' ); ?>" class="regular-text" dir="ltr" placeholder="https://" />
+									<button type="button" class="button" id="yuniq-ai-upload-logo">انتخاب از رسانه</button>
+								</div>
 							</td>
 						</tr>
 					</table>
 				</div>
 				<div class="yuniq-ai-card">
-					<h2>کارت‌های اقدام سریع</h2>
-					<p class="description">این کارت‌ها بالای کادر پیام در پنل دستیار نمایش داده می‌شوند.</p>
-					<div id="yuniq-ai-quick-actions">
+					<h2>گزینه‌های شروع گفتگو</h2>
+					<p class="description">بازدیدکننده با باز کردن دستیار این گزینه‌ها را می‌بیند و با یک لمس انتخاب می‌کند. هر گزینه یا یک سوال از دستیار می‌پرسد، یا (اگر لینک داشته باشد) مستقیم به آن صفحه می‌رود.</p>
+					<?php // Lets Settings::sanitize() tell "every row removed" apart from "field not on this form". ?>
+					<input type="hidden" name="yuniq_ai_settings[quick_actions_present]" value="1" />
+					<div id="yuniq-ai-quick-actions" class="yq-rows">
 						<?php
-						$actions = isset( $s['quick_actions'] ) && is_array( $s['quick_actions'] ) ? $s['quick_actions'] : array();
-						if ( empty( $actions ) ) {
-							$actions = array( array( 'label' => '', 'prompt' => '' ) );
-						}
+						$actions = isset( $s['quick_actions'] ) && is_array( $s['quick_actions'] ) ? array_values( $s['quick_actions'] ) : array();
 						foreach ( $actions as $i => $action ) :
+							$qa_name = 'yuniq_ai_settings[quick_actions][' . (int) $i . ']';
 							?>
-							<div class="yuniq-ai-qa-row" style="flex-wrap:wrap;">
-								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][label]" value="<?php echo esc_attr( $action['label'] ); ?>" placeholder="عنوان کارت" style="width:110px;" />
-								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][desc]" value="<?php echo esc_attr( isset( $action['desc'] ) ? $action['desc'] : '' ); ?>" placeholder="توضیح کوتاه" style="width:110px;" />
-								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][prompt]" value="<?php echo esc_attr( $action['prompt'] ); ?>" placeholder="پرامپت AI (اگر لینک خالی باشد)" style="width:180px;" />
-								<input type="text" name="yuniq_ai_settings[quick_actions][<?php echo esc_attr( $i ); ?>][link]" value="<?php echo esc_attr( isset( $action['link'] ) ? $action['link'] : '' ); ?>" placeholder="لینک اختیاری (مثلاً /services/)" style="width:180px;" />
-								<button type="button" class="button yuniq-ai-remove-qa">&times;</button>
+							<div class="yuniq-ai-qa-row yq-row">
+								<label class="yq-row-field"><span>عنوان</span><input type="text" name="<?php echo esc_attr( $qa_name ); ?>[label]" value="<?php echo esc_attr( isset( $action['label'] ) ? $action['label'] : '' ); ?>" placeholder="مثلاً قیمت‌ها" maxlength="40" /></label>
+								<label class="yq-row-field"><span>توضیح کوتاه</span><input type="text" name="<?php echo esc_attr( $qa_name ); ?>[desc]" value="<?php echo esc_attr( isset( $action['desc'] ) ? $action['desc'] : '' ); ?>" placeholder="اختیاری" maxlength="60" /></label>
+								<label class="yq-row-field yq-row-wide"><span>سوالی که پرسیده می‌شود</span><input type="text" name="<?php echo esc_attr( $qa_name ); ?>[prompt]" value="<?php echo esc_attr( isset( $action['prompt'] ) ? $action['prompt'] : '' ); ?>" placeholder="خالی = همان عنوان" /></label>
+								<label class="yq-row-field yq-row-wide"><span>یا لینک صفحه</span><input type="text" name="<?php echo esc_attr( $qa_name ); ?>[link]" value="<?php echo esc_attr( isset( $action['link'] ) ? $action['link'] : '' ); ?>" placeholder="/services/" dir="ltr" /></label>
+								<button type="button" class="button yuniq-ai-remove-qa" aria-label="حذف این گزینه">&times;</button>
 							</div>
 						<?php endforeach; ?>
 					</div>
-					<button type="button" class="button" id="yuniq-ai-add-qa">+ افزودن اقدام</button>
+					<p class="yq-rows-empty description">هیچ گزینه‌ای تعریف نشده؛ دستیار فقط کادر پیام را نشان می‌دهد.</p>
+					<button type="button" class="button" id="yuniq-ai-add-qa">+ افزودن گزینه</button>
 				</div>
 			</div>
 
 			<!-- AI API -->
 			<div class="yuniq-ai-tab-panel" id="tab-ai">
 				<div class="yuniq-ai-card yuniq-ai-guide">
-					<h2>راهنمای اتصال در ۳ قدم</h2>
+					<div class="yq-card-head">
+						<h2>راهنمای اتصال در ۳ قدم</h2>
+						<a class="button button-small" href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-guide' ) ); ?>">راهنمای کامل دریافت کلید</a>
+					</div>
 					<ol class="yuniq-ai-steps">
 						<li>
 							<strong>سرویس را انتخاب کنید.</strong>
@@ -214,6 +289,7 @@ $yq_design_defaults = array_intersect_key(
 							<th scope="row"><label for="yuniq-ai-endpoint">آدرس API (Endpoint)</label></th>
 							<td>
 								<input type="url" name="yuniq_ai_settings[api_endpoint]" id="yuniq-ai-endpoint" value="<?php echo esc_attr( $s['api_endpoint'] ); ?>" class="large-text" dir="ltr" />
+								<p class="yq-inline-warning" id="yuniq-ai-endpoint-warning" role="alert"></p>
 								<p class="description">با انتخاب سرویس خودکار پر می‌شود. آدرس پایه (مثلاً <code>https://example.com/v1</code>) هم کافی است؛ مسیر <code>/chat/completions</code> خودکار اضافه می‌شود.</p>
 							</td>
 						</tr>
@@ -241,7 +317,32 @@ $yq_design_defaults = array_intersect_key(
 				</div>
 
 				<div class="yuniq-ai-card">
-					<h2>رفتار پاسخ‌ها</h2>
+					<h2>سبک پاسخ‌گویی</h2>
+					<p class="description">فقط انتخاب کنید؛ لازم نیست چیزی در متن دستورالعمل بنویسید.</p>
+					<div class="yq-field">
+						<span class="yq-label">لحن دستیار</span>
+						<?php $yq_options( 'reply_tone' ); ?>
+					</div>
+					<div class="yq-field">
+						<span class="yq-label">طول پاسخ</span>
+						<?php $yq_options( 'reply_length' ); ?>
+					</div>
+					<div class="yq-field">
+						<span class="yq-label">زبان پاسخ</span>
+						<?php $yq_options( 'reply_language' ); ?>
+					</div>
+					<div class="yq-field">
+						<span class="yq-label">لینک دادن به صفحات سایت</span>
+						<?php $yq_options( 'links_policy' ); ?>
+					</div>
+					<div class="yq-field">
+						<label class="yq-toggle-row"><?php $yq_switch( 'suggest_options' ); ?> گزینه‌های پیشنهادی زیر پاسخ</label>
+						<p class="yq-help">دستیار هر جا مناسب باشد ۲ تا ۴ گزینه آماده زیر پاسخش می‌گذارد تا بازدیدکننده به‌جای تایپ، انتخاب کند.</p>
+					</div>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>تنظیمات فنی پاسخ</h2>
 					<table class="form-table">
 						<tr>
 							<th scope="row"><label for="yuniq-ai-temperature">خلاقیت (Temperature)</label></th>
@@ -787,6 +888,52 @@ $yq_design_defaults = array_intersect_key(
 				</div>
 			</div>
 
+			<!-- امنیت -->
+			<div class="yuniq-ai-tab-panel" id="tab-security">
+				<div class="yuniq-ai-card">
+					<h2>محافظت از هزینه API</h2>
+					<p class="description">هر پیام از اعتبار حساب شما کم می‌کند. این دو محدودیت جلوی سوءاستفاده و ربات‌ها را می‌گیرند.</p>
+					<div class="yq-field">
+						<span class="yq-label">محدودیت هر بازدیدکننده</span>
+						<?php $yq_options( 'rate_profile' ); ?>
+					</div>
+					<div class="yq-field">
+						<span class="yq-label">سقف کل پیام‌های سایت در یک روز</span>
+						<?php $yq_options( 'daily_limit' ); ?>
+						<p class="yq-help">وقتی سقف پر شود، دستیار تا فردا مؤدبانه عذرخواهی می‌کند و موضوع در «وضعیت و خطاها» ثبت می‌شود.</p>
+					</div>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>تشخیص IP بازدیدکننده</h2>
+					<p class="description">محدودیت‌ها بر اساس IP اعمال می‌شوند. اگر سایت پشت CDN باشد و این گزینه درست انتخاب نشود، همه بازدیدکنندگان یک نفر حساب می‌شوند.</p>
+					<?php $yq_options( 'ip_source' ); ?>
+					<p class="yq-note">
+						IP که الان از شما دیده می‌شود:
+						<code dir="ltr"><?php echo esc_html( \Yuniq\Ai\Support\RateLimiter::client_ip( (string) $s['ip_source'] ) ); ?></code>
+						— اگر با IP واقعی اینترنت شما یکی نیست (مثلاً IP سرور یا CDN است)، گزینه مناسب CDN خود را انتخاب و ذخیره کنید. گزینه‌های CDN را فقط وقتی انتخاب کنید که سایت واقعاً پشت همان سرویس است؛ در غیر این صورت قابل دور زدن است.
+					</p>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>حریم خصوصی و نگه‌داری داده</h2>
+					<p class="description">متن گفتگوها و فرم‌های پرشده چه مدت در پایگاه‌داده سایت بماند؟ موارد قدیمی‌تر هر روز خودکار پاک می‌شوند (گفتگوهای باز با کارشناس پاک نمی‌شوند).</p>
+					<?php $yq_options( 'data_retention' ); ?>
+				</div>
+
+				<div class="yuniq-ai-card">
+					<h2>آنچه افزونه خودش انجام می‌دهد</h2>
+					<ul class="yq-list yq-list-check">
+						<li>کلید API و توکن تلگرام <strong>رمزنگاری‌شده</strong> ذخیره می‌شوند و هرگز به مرورگر فرستاده نمی‌شوند.</li>
+						<li>جزئیات خطای سرویس هوش مصنوعی به بازدیدکننده نشان داده نمی‌شود؛ فقط در «وضعیت و خطاها» برای شما ثبت می‌شود.</li>
+						<li>همه متن‌هایی که بازدیدکننده یا هوش مصنوعی می‌نویسد پیش از نمایش پاک‌سازی می‌شوند.</li>
+						<li>فرم سرنخ و درخواست کارشناس محدودیت تعداد دارند تا صندوق ایمیل و تلگرام شما پر نشود.</li>
+						<li>نوشته‌های رمزدار، پیش‌نویس و خصوصی هرگز وارد پایگاه دانش نمی‌شوند.</li>
+						<li>همه عملیات مدیریتی فقط برای مدیر سایت و با کد امنیتی یک‌بارمصرف انجام می‌شود.</li>
+					</ul>
+				</div>
+			</div>
+
 			<!-- پشتیبانی زنده -->
 			<div class="yuniq-ai-tab-panel" id="tab-live-support">
 				<div class="yuniq-ai-card">
@@ -844,7 +991,7 @@ $yq_design_defaults = array_intersect_key(
 						<tr>
 							<th scope="row">توکن ربات تلگرام</th>
 							<td>
-								<input type="password" name="yuniq_ai_settings[telegram_bot_token]" value="<?php echo esc_attr( empty( $s['telegram_bot_token'] ) ? '' : \Yuniq\Ai\Settings::SECRET_MASK ); ?>" class="regular-text" autocomplete="off" />
+								<input type="password" name="yuniq_ai_settings[telegram_bot_token]" value="<?php echo esc_attr( empty( $s['telegram_bot_token'] ) ? '' : \Yuniq\Ai\Settings::SECRET_MASK ); ?>" class="regular-text" autocomplete="off" dir="ltr" />
 								<p class="description">توکن را از <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> در تلگرام بگیرید.</p>
 							</td>
 						</tr>
@@ -870,6 +1017,7 @@ $yq_design_defaults = array_intersect_key(
 						<tr>
 							<th scope="row">عنوان فرم</th>
 							<td>
+								<input type="hidden" name="yuniq_ai_settings[lead_forms][0][key]" value="<?php echo esc_attr( isset( $form0['key'] ) ? $form0['key'] : 'consult' ); ?>" />
 								<input type="text" name="yuniq_ai_settings[lead_forms][0][title]" value="<?php echo esc_attr( isset( $form0['title'] ) ? $form0['title'] : 'درخواست مشاوره' ); ?>" class="regular-text" />
 							</td>
 						</tr>
@@ -884,7 +1032,9 @@ $yq_design_defaults = array_intersect_key(
 					<div id="yuniq-ai-lead-fields">
 						<?php foreach ( $f_fields as $i => $field ) : ?>
 							<div class="yuniq-ai-qa-row">
-								<input type="text" name="yuniq_ai_settings[lead_forms][0][fields][<?php echo esc_attr( $i ); ?>][label]" value="<?php echo esc_attr( isset( $field['label'] ) ? $field['label'] : '' ); ?>" placeholder="عنوان فیلد (مثلاً نام شما)" style="width:200px;" />
+								<?php // Keeps the stored field name, so renaming a label does not orphan earlier answers. ?>
+								<input type="hidden" name="yuniq_ai_settings[lead_forms][0][fields][<?php echo esc_attr( $i ); ?>][name]" value="<?php echo esc_attr( isset( $field['name'] ) ? $field['name'] : '' ); ?>" />
+								<input type="text" name="yuniq_ai_settings[lead_forms][0][fields][<?php echo esc_attr( $i ); ?>][label]" value="<?php echo esc_attr( isset( $field['label'] ) ? $field['label'] : '' ); ?>" placeholder="عنوان فیلد (مثلاً نام شما)" />
 								<select name="yuniq_ai_settings[lead_forms][0][fields][<?php echo esc_attr( $i ); ?>][type]">
 									<?php $f_type = isset( $field['type'] ) ? $field['type'] : 'text'; ?>
 									<option value="text" <?php selected( $f_type, 'text' ); ?>>متن</option>
@@ -902,8 +1052,9 @@ $yq_design_defaults = array_intersect_key(
 			</div>
 		</div>
 
-		<p class="submit">
+		<div class="yq-savebar" id="yuniq-ai-savebar">
+			<span class="yq-savebar-status" id="yuniq-ai-save-status" aria-live="polite">همه تغییرات ذخیره شده است</span>
 			<?php submit_button( 'ذخیره تنظیمات', 'primary', 'submit', false ); ?>
-		</p>
+		</div>
 	</form>
 </div>

@@ -57,7 +57,7 @@ $status_labels = array(
 										</span>
 									</span>
 									<span class="yuniq-ai-ls-row-meta">
-										<?php echo esc_html( $c['last_message_at'] ? $c['last_message_at'] : $c['created_at'] ); ?>
+										<?php echo esc_html( \Yuniq\Ai\Support\Text::human_date( $c['last_message_at'] ? $c['last_message_at'] : $c['created_at'] ) ); ?>
 										<?php if ( ! empty( $c['unread_for_admin'] ) ) : ?>
 											<span class="yuniq-ai-ls-unread-dot"></span>
 										<?php endif; ?>
@@ -84,8 +84,10 @@ $status_labels = array(
 							</div>
 						</div>
 						<div id="yuniq-ai-ls-messages" class="yuniq-ai-ls-messages"></div>
+						<div id="yuniq-ai-ls-error" class="yuniq-ai-ls-error" role="alert"></div>
+						<p id="yuniq-ai-ls-closed-note" class="yuniq-ai-ls-closed-note" style="display:none;">این گفتگو بسته شده و بازدیدکننده به دستیار هوشمند برگشته است.</p>
 						<form id="yuniq-ai-ls-reply-form" class="yuniq-ai-ls-reply-form">
-							<textarea id="yuniq-ai-ls-reply-input" rows="2" placeholder="پاسخ خود را بنویسید..."></textarea>
+							<textarea id="yuniq-ai-ls-reply-input" rows="2" placeholder="پاسخ خود را بنویسید… (Enter = ارسال، Shift+Enter = خط جدید)"></textarea>
 							<button type="submit" class="button button-primary">ارسال</button>
 						</form>
 					</div>

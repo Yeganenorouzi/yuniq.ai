@@ -12,10 +12,15 @@ use Yuniq\Ai\Admin\AdminPages;
 use Yuniq\Ai\Admin\Ajax\ConnectionController;
 use Yuniq\Ai\Admin\Ajax\CrawlController;
 use Yuniq\Ai\Admin\Ajax\LiveSupportController as LiveSupportAjaxController;
+use Yuniq\Ai\Admin\Ajax\StatusController;
+use Yuniq\Ai\Admin\Health;
+use Yuniq\Ai\Support\Logger;
+use Yuniq\Ai\Support\Maintenance;
 use Yuniq\Ai\Ai\Client;
 use Yuniq\Ai\Analytics\Repository as Analytics;
 use Yuniq\Ai\Contracts\HookableInterface;
 use Yuniq\Ai\Frontend\Widget;
+use Yuniq\Ai\Kb\AutoSync;
 use Yuniq\Ai\Kb\Indexer;
 use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\LiveSupport\LeadRepository;
@@ -89,6 +94,9 @@ final class Plugin {
 
 		$this->booted = true;
 
+		// First, so a crash anywhere below still reaches the error log.
+		Logger::register_fatal_handler();
+
 		// Applies pending table changes after an update, without the site
 		// owner having to deactivate and reactivate the plugin. Run eagerly
 		// here — not deferred to `admin_init` — because `admin_menu` (which
@@ -133,6 +141,8 @@ final class Plugin {
 			ChatController::class,
 			LiveSupportRestController::class,
 			Widget::class,
+			AutoSync::class,
+			Maintenance::class,
 		);
 
 		if ( is_admin() ) {
@@ -140,6 +150,7 @@ final class Plugin {
 			$services[] = CrawlController::class;
 			$services[] = ConnectionController::class;
 			$services[] = LiveSupportAjaxController::class;
+			$services[] = StatusController::class;
 		}
 
 		return $services;
@@ -215,6 +226,34 @@ final class Plugin {
 		);
 
 		$this->container->set(
+			Maintenance::class,
+			function ( Container $c ) {
+				return new Maintenance( $c->get( Settings::class ) );
+			}
+		);
+
+		$this->container->set(
+			Health::class,
+			function ( Container $c ) {
+				return new Health( $c->get( Settings::class ), $c->get( KnowledgeBase::class ) );
+			}
+		);
+
+		$this->container->set(
+			StatusController::class,
+			function ( Container $c ) {
+				return new StatusController( $c->get( Dispatcher::class ) );
+			}
+		);
+
+		$this->container->set(
+			AutoSync::class,
+			function ( Container $c ) {
+				return new AutoSync( $c->get( Indexer::class ), $c->get( KnowledgeBase::class ) );
+			}
+		);
+
+		$this->container->set(
 			Client::class,
 			function ( Container $c ) {
 				return new Client( $c->get( Settings::class ), $c->get( KnowledgeBase::class ) );
@@ -248,7 +287,8 @@ final class Plugin {
 					$c->get( KnowledgeBase::class ),
 					$c->get( Indexer::class ),
 					$c->get( Analytics::class ),
-					$c->get( LiveSupport::class )
+					$c->get( LiveSupport::class ),
+					$c->get( Health::class )
 				);
 			}
 		);

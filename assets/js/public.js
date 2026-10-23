@@ -59,15 +59,37 @@
 		return null;
 	}
 
-	/** A v4-shaped id, so a session exists before the first chat turn. */
+	/**
+	 * A v4-shaped id, so a session exists before the first chat turn.
+	 *
+	 * This id is the only thing that guards a visitor's live-support
+	 * conversation (name, contact info, transcript) on the public
+	 * `/conversation/{id}/messages` routes, so it must not be guessable.
+	 * `crypto.randomUUID()` needs a secure context and is unavailable on a
+	 * plain `http://` site — common on budget hosting — so the fallback
+	 * reaches for `crypto.getRandomValues()` first, which works over HTTP
+	 * too, and only drops to the predictable `Math.random()` on a browser
+	 * old enough to lack the Web Crypto API entirely.
+	 */
 	function newSessionId() {
 		if (window.crypto && typeof window.crypto.randomUUID === 'function') {
 			return window.crypto.randomUUID();
 		}
-		return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-			var r = Math.random() * 16 | 0;
-			return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-		});
+
+		var bytes = new Array(16);
+		if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+			var typed = new Uint8Array(16);
+			window.crypto.getRandomValues(typed);
+			for (var i = 0; i < 16; i++) bytes[i] = typed[i];
+		} else {
+			for (var j = 0; j < 16; j++) bytes[j] = Math.random() * 256 | 0;
+		}
+
+		bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+		bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+
+		var hex = bytes.map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+		return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
 	}
 
 	function ensureSession() {
@@ -617,31 +639,79 @@
 		if (old) old.remove();
 	}
 
-	function renderOptions(list) {
-		if (!Array.isArray(list) || !list.length) return;
+	function addReplyChip(wrap, label, onClick, extraClass) {
+		label = String(label || '').trim();
+		if (!label) return;
+		var btn = document.createElement('button');
+		btn.type = 'button';
+		btn.className = extraClass ? 'yuniq-ai-reply ' + extraClass : 'yuniq-ai-reply';
+		btn.textContent = label;
+		btn.addEventListener('click', onClick);
+		wrap.appendChild(btn);
+	}
+
+	/**
+	 * Renders the assistant's own follow-up chips under a reply. When the
+	 * reply also needs a human (`offerAgent`), one more chip for "talk to an
+	 * expert" is appended to the same row, so the escalation path is one of
+	 * the suggestions rather than a separate notice — see addAgentChip().
+	 */
+	function renderOptions(list, offerAgent) {
 		if (conversationStatus === 'pending' || conversationStatus === 'active') return;
+		if ((!Array.isArray(list) || !list.length) && !offerAgent) return;
 
 		clearOptions();
 
 		var wrap = document.createElement('div');
 		wrap.className = 'yuniq-ai-replies';
 
-		list.slice(0, 4).forEach(function (label) {
-			label = String(label || '').trim();
-			if (!label) return;
-			var btn = document.createElement('button');
-			btn.type = 'button';
-			btn.className = 'yuniq-ai-reply';
-			btn.textContent = label;
-			btn.addEventListener('click', function () { sendMessage(label); });
-			wrap.appendChild(btn);
+		(Array.isArray(list) ? list : []).slice(0, 4).forEach(function (label) {
+			addReplyChip(wrap, label, function () { sendMessage(label); });
 		});
+
+		if (offerAgent) addAgentChip(wrap);
 
 		if (!wrap.children.length) return;
 
 		messagesEl.appendChild(wrap);
 		if (motion.api) motion.api.enterChips(wrap.children);
 		scrollToBottom();
+	}
+
+	/**
+	 * Adds a "talk to an expert" chip to an existing (or newly created)
+	 * suggestions row, honouring the same live-support settings the
+	 * persistent footer button and the escalate() call already respect.
+	 */
+	function addAgentChip(wrap) {
+		if (!liveSupport.enabled || liveSupport.mode === 'manual') return;
+		if (conversationStatus === 'pending' || conversationStatus === 'active') return;
+
+		// A wrap passed in by renderOptions() is not in the DOM yet — the
+		// caller appends it itself. Otherwise, reuse an existing row if the
+		// assistant already left one, and only build a new one as a last resort.
+		var isNew = false;
+
+		if (!wrap) {
+			wrap = messagesEl.querySelector('.yuniq-ai-replies');
+
+			if (!wrap) {
+				wrap = document.createElement('div');
+				wrap.className = 'yuniq-ai-replies';
+				isNew = true;
+			}
+		}
+
+		addReplyChip(wrap, strings.talkToHuman || 'صحبت با کارشناس', function () {
+			clearOptions();
+			escalate();
+		}, 'yuniq-ai-reply-agent');
+
+		if (isNew) {
+			messagesEl.appendChild(wrap);
+			if (motion.api) motion.api.enterChips(wrap.children);
+			scrollToBottom();
+		}
 	}
 
 	function showTyping() {
@@ -826,26 +896,6 @@
 			})
 			.catch(function () { appendNotice(TXT_NETWORK_ERROR); })
 			.then(finishTurn);
-	}
-
-	function renderNeedHumanCta() {
-		if (!liveSupport.enabled || liveSupport.mode === 'manual') return;
-		if (conversationStatus === 'pending' || conversationStatus === 'active') return;
-
-		startChatUI();
-		var wrap = document.createElement('div');
-		wrap.className = 'yuniq-ai-msg yuniq-ai-msg-system yuniq-ai-need-human';
-		var btn = document.createElement('button');
-		btn.type = 'button';
-		btn.textContent = strings.needHumanCta || 'این پاسخ کافی نبود؟ صحبت با کارشناس';
-		btn.addEventListener('click', function () {
-			wrap.remove();
-			escalate();
-		});
-		wrap.appendChild(btn);
-		messagesEl.appendChild(wrap);
-		if (motion.api) motion.api.enterMessage(wrap);
-		scrollToBottom();
 	}
 
 	function renderProductCard(product) {
@@ -1152,7 +1202,10 @@
 				renderOptions(payload.options);
 			} else if (payload.type === 'needs_human') {
 				settle();
-				renderNeedHumanCta();
+				// Arrives after any 'options' event for the same turn (see
+				// ChatController::handle_chat_stream()), so this adds the
+				// agent chip to the row already rendered above, or starts one.
+				addAgentChip();
 			}
 		}
 
@@ -1206,11 +1259,14 @@
 					var cards = Array.isArray(data.products) && data.products.length ? data.products : (data.product ? [data.product] : []);
 					cards.forEach(renderProductCard);
 					if (data.form_key) renderForm(data.form_key);
-					if (data.needs_human) renderNeedHumanCta();
-					else renderOptions(data.options);
+					// Unlike the streaming path, this single response carries
+					// both at once: show the assistant's own options and, if
+					// it still needs a human, add that chip to the same row
+					// instead of discarding the options to show it alone.
+					renderOptions(data.options, !!data.needs_human);
 				} else {
 					showError((data && data.error) ? data.error : TXT_GENERIC_ERROR);
-					if (data && data.needs_human) renderNeedHumanCta();
+					if (data && data.needs_human) addAgentChip();
 				}
 			})
 			.catch(function () { showError(TXT_NETWORK_ERROR); })

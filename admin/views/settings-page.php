@@ -162,7 +162,7 @@ $yq_design_defaults = array_intersect_key(
 							<th scope="row">فعال‌سازی دستیار</th>
 							<td>
 								<label class="yuniq-ai-switch">
-									<input type="checkbox" name="yuniq_ai_settings[enabled]" value="1" <?php checked( ! empty( $s['enabled'] ) ); ?> />
+									<input type="checkbox" id="yuniq-ai-enabled" name="yuniq_ai_settings[enabled]" value="1" <?php checked( ! empty( $s['enabled'] ) ); ?> />
 									<span class="slider"></span>
 								</label>
 							</td>
@@ -444,8 +444,14 @@ $yq_design_defaults = array_intersect_key(
 					<p class="description">دستیار فقط چیزهایی را می‌داند که اینجا تیک زده‌اید. هر تغییری در این تب بعد از «ذخیره» و اجرای دوباره ایندکس در «پایگاه دانش» اعمال می‌شود.</p>
 
 					<?php
-					// Detect public post types dynamically
-					$public_types = get_post_types( array( 'public' => true ), 'objects' );
+					// Detect post types dynamically. A type the admin manages from the
+					// dashboard (show_ui) is included even when it has no public
+					// single/archive page of its own — common for JetEngine- or
+					// ACF-registered "data store" post types (e.g. a product catalog
+					// built without WooCommerce) that are only ever shown through a
+					// template or shortcode.
+					$public_types = get_post_types( array( 'public' => true ), 'objects' )
+						+ get_post_types( array( 'show_ui' => true ), 'objects' );
 					unset( $public_types['attachment'] );
 					$has_woo = class_exists( 'WooCommerce' );
 					?>
@@ -469,7 +475,14 @@ $yq_design_defaults = array_intersect_key(
 						</div>
 
 						<?php
-						$skip = array( 'post', 'page', 'product', 'attachment', 'revision', 'nav_menu_item', 'custom_css', 'customize_changeset', 'oembed_cache', 'user_request', 'wp_block', 'wp_template', 'wp_template_part', 'wp_global_styles', 'wp_navigation', 'wp_font_family', 'wp_font_face' );
+						// 'product' is skipped here only when WooCommerce actually owns that
+						// slug (the dedicated section above already covers it) — a site
+						// without WooCommerce that built its own "product" post type via
+						// JetEngine/ACF must still see it listed below.
+						$skip = array( 'post', 'page', 'attachment', 'revision', 'nav_menu_item', 'custom_css', 'customize_changeset', 'oembed_cache', 'user_request', 'wp_block', 'wp_template', 'wp_template_part', 'wp_global_styles', 'wp_navigation', 'wp_font_family', 'wp_font_face' );
+						if ( $has_woo ) {
+							$skip[] = 'product';
+						}
 						$custom = array();
 						foreach ( $public_types as $pt => $obj ) {
 							if ( in_array( $pt, $skip, true ) ) continue;
@@ -535,10 +548,61 @@ $yq_design_defaults = array_intersect_key(
 							<div class="yq-check-grid">
 								<?php
 								$yq_check( 'site_profile', 'نقشه کلی سایت', 'فهرست دسته‌بندی‌ها و برگه‌های اصلی همیشه در اختیار دستیار باشد: «چی می‌فروشید؟»' );
-								$yq_check( 'index_custom_fields', 'فیلدهای سفارشی', 'فیلدهای ACF و مشابه (فقط فیلدهای عمومی)' );
+								$yq_check( 'index_custom_fields', 'فیلدهای سفارشی', 'فیلدهای ACF، JetEngine و هر چیزی که به شکل Custom Field ذخیره شده (فقط فیلدهای عمومی)' );
 								?>
 							</div>
 						</div>
+
+						<?php if ( ! empty( $s['index_custom_fields'] ) ) : ?>
+						<div class="yuniq-ai-check-group yq-check-wide">
+							<h3>کدام فیلدها را بداند؟</h3>
+							<p class="description">فیلدهایی که واقعاً روی محتوای سایت شما مقدار دارند، به تفکیک هر نوع محتوا، اینجا لیست می‌شوند — چه با ACF ساخته شده باشند، چه JetEngine، چه هر افزونه دیگری. تیک هر فیلدی که نمی‌خواهید دستیار بداند را بردارید؛ بقیه طبق‌معمول ایندکس می‌شوند. فیلدهای تازه (مثلاً بعد از افزودن یک فیلد جدید در ACF) خودکار اضافه می‌شوند و نیازی به تیک دوباره ندارند.</p>
+
+							<?php
+							$yq_cpt_labels = array();
+							foreach ( get_post_types( array(), 'objects' ) as $yq_pt_obj ) {
+								$yq_cpt_labels[ $yq_pt_obj->name ] = $yq_pt_obj->labels->singular_name;
+							}
+							$yq_excluded_fields  = isset( $s['excluded_fields'] ) && is_array( $s['excluded_fields'] ) ? $s['excluded_fields'] : array();
+							$yq_any_fields_shown = false;
+
+							foreach ( (array) ( isset( $s['content_types'] ) ? $s['content_types'] : array() ) as $yq_pt ) :
+								$yq_fields = \Yuniq\Ai\Kb\FieldDiscovery::for_post_type( $yq_pt );
+
+								if ( ! $yq_fields ) {
+									continue;
+								}
+
+								$yq_any_fields_shown = true;
+								$yq_pt_excluded      = isset( $yq_excluded_fields[ $yq_pt ] ) && is_array( $yq_excluded_fields[ $yq_pt ] ) ? $yq_excluded_fields[ $yq_pt ] : array();
+								?>
+								<div class="yq-field-group">
+									<h4 class="yq-sub"><?php echo esc_html( isset( $yq_cpt_labels[ $yq_pt ] ) ? $yq_cpt_labels[ $yq_pt ] : $yq_pt ); ?> <code><?php echo esc_html( $yq_pt ); ?></code></h4>
+									<input type="hidden" name="yuniq_ai_settings[all_fields][<?php echo esc_attr( $yq_pt ); ?>]" value="<?php echo esc_attr( implode( ',', wp_list_pluck( $yq_fields, 'key' ) ) ); ?>" />
+									<div class="yq-check-grid">
+										<?php foreach ( $yq_fields as $yq_field ) : ?>
+											<label class="yq-check-row">
+												<input type="checkbox" name="yuniq_ai_settings[included_fields][<?php echo esc_attr( $yq_pt ); ?>][]" value="<?php echo esc_attr( $yq_field['key'] ); ?>" <?php checked( ! in_array( $yq_field['key'], $yq_pt_excluded, true ) ); ?> />
+												<span>
+													<strong><?php echo esc_html( $yq_field['label'] ); ?></strong>
+													<small>
+														<span class="yuniq-ai-type-badge"><?php echo esc_html( $yq_field['source'] ); ?></span>
+														<?php if ( '' !== $yq_field['sample'] ) : ?>
+															— <?php echo esc_html( $yq_field['sample'] ); ?>
+														<?php endif; ?>
+													</small>
+												</span>
+											</label>
+										<?php endforeach; ?>
+									</div>
+								</div>
+							<?php endforeach; ?>
+
+							<?php if ( ! $yq_any_fields_shown ) : ?>
+								<p class="yq-note">هنوز فیلدی برای نشان دادن پیدا نشد. اگر نوع محتوای تازه‌ای را بالا تیک زدید، یک‌بار «ذخیره تنظیمات» کنید تا فیلدهای همان نوع اینجا ظاهر شوند.</p>
+							<?php endif; ?>
+						</div>
+						<?php endif; ?>
 
 
 					<table class="form-table" style="margin-top:20px;">
@@ -1047,36 +1111,65 @@ $yq_design_defaults = array_intersect_key(
 				</div>
 
 				<div class="yuniq-ai-card">
-					<h2>اعلان درخواست‌های جدید</h2>
-					<p class="description">هر بار که بازدیدکننده‌ای درخواست کارشناس بدهد یا فرمی ثبت کند، از این کانال‌ها مطلع می‌شوید.</p>
+					<div class="yq-card-head">
+						<div>
+							<h2>اعلان درخواست‌های جدید</h2>
+							<p class="description">هر بار که بازدیدکننده‌ای درخواست کارشناس بدهد یا فرمی ثبت کند، از این کانال‌ها مطلع می‌شوید. چک‌باکس جدایی برای «فعال‌سازی» هر کانال لازم نیست — همین که آدرس/توکن زیر را درست پر و ذخیره کنید، همان کانال خودکار فعال می‌شود؛ برای خاموش‌کردن یک کانال، همان فیلدش را خالی بگذارید.</p>
+						</div>
+						<a class="button button-small" href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-guide#yq-g-notify' ) ); ?>">راهنمای فعال‌سازی تلگرام و بله ↗</a>
+					</div>
 					<table class="form-table">
-						<tr>
-							<th scope="row">کانال‌های اعلان</th>
-							<td>
-								<?php $channels = isset( $s['notify_channels'] ) && is_array( $s['notify_channels'] ) ? $s['notify_channels'] : array(); ?>
-								<label><input type="checkbox" name="yuniq_ai_settings[notify_channels][]" value="email" <?php checked( in_array( 'email', $channels, true ) ); ?> /> ایمیل</label>
-								&nbsp;&nbsp;
-								<label><input type="checkbox" name="yuniq_ai_settings[notify_channels][]" value="telegram" <?php checked( in_array( 'telegram', $channels, true ) ); ?> /> تلگرام</label>
-							</td>
-						</tr>
 						<tr>
 							<th scope="row">ایمیل دریافت اعلان</th>
 							<td>
 								<input type="email" name="yuniq_ai_settings[notify_email]" value="<?php echo esc_attr( isset( $s['notify_email'] ) ? $s['notify_email'] : get_option( 'admin_email' ) ); ?>" class="regular-text" />
+								<p class="description">
+									<?php if ( ! empty( $s['notify_email'] ) ) : ?>
+										<span class="yuniq-ai-badge-ok">فعال</span> اعلان‌ها به این آدرس ارسال می‌شوند. اگر چیزی نمی‌رسد، ابتدا پوشه اسپم را چک کنید؛ خیلی از هاست‌های ایرانی ارسال ایمیل سرور را محدود می‌کنند و نیاز به یک افزونه SMTP (مثل WP Mail SMTP) دارند — توضیح کامل در <a href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-guide#yq-g-notify' ) ); ?>">راهنما</a>.
+									<?php else : ?>
+										این فیلد خالی نمی‌ماند؛ اگر پاک شود دوباره ایمیل مدیر سایت در آن قرار می‌گیرد.
+									<?php endif; ?>
+								</p>
 							</td>
 						</tr>
 						<tr>
 							<th scope="row">توکن ربات تلگرام</th>
 							<td>
 								<input type="password" name="yuniq_ai_settings[telegram_bot_token]" value="<?php echo esc_attr( empty( $s['telegram_bot_token'] ) ? '' : \Yuniq\Ai\Settings::SECRET_MASK ); ?>" class="regular-text" autocomplete="off" dir="ltr" />
-								<p class="description">توکن را از <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> در تلگرام بگیرید.</p>
+								<p class="description">توکن را از <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> در تلگرام بگیرید. نمی‌دانید چطور؟ <a href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-guide#yq-g-notify' ) ); ?>">راهنمای قدم‌به‌قدم فعال‌سازی تلگرام ↗</a></p>
 							</td>
 						</tr>
 						<tr>
 							<th scope="row">شناسه چت تلگرام (Chat ID)</th>
 							<td>
 								<input type="text" name="yuniq_ai_settings[telegram_chat_id]" value="<?php echo esc_attr( isset( $s['telegram_chat_id'] ) ? $s['telegram_chat_id'] : '' ); ?>" class="regular-text" dir="ltr" />
-								<p class="description">شناسه چت خود یا گروه پشتیبانی را از ربات‌هایی مثل <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer">@userinfobot</a> پیدا کنید.</p>
+								<p class="description">شناسه چت خود یا گروه پشتیبانی را از ربات‌هایی مثل <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer">@userinfobot</a> پیدا کنید.
+									<strong>قبل از هر چیز، در تلگرام ربات خودتان را پیدا کنید و یک‌بار دکمه Start (یا /start) را بزنید</strong> — تا وقتی این کار را نکرده باشید، تلگرام به ربات اجازه نمی‌دهد به شما پیام بدهد و هیچ اعلانی نمی‌رسد، حتی اگر توکن و شناسه چت کاملاً درست باشند.
+								</p>
+								<?php if ( ! empty( $s['telegram_bot_token'] ) && ! empty( $s['telegram_chat_id'] ) ) : ?>
+									<p class="description"><span class="yuniq-ai-badge-ok">فعال</span> توکن و شناسه چت هر دو وارد شده‌اند؛ با دکمه «ارسال اعلان آزمایشی» در صفحه «وضعیت و خطاها» مطمئن شوید واقعاً می‌رسد.</p>
+								<?php elseif ( ! empty( $s['telegram_bot_token'] ) || ! empty( $s['telegram_chat_id'] ) ) : ?>
+									<p class="description"><span class="yuniq-ai-badge-warn">ناقص</span> تا هر دو فیلد (توکن و شناسه چت) پر نشوند، اعلان تلگرام ارسال نمی‌شود.</p>
+								<?php endif; ?>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">توکن ربات بله</th>
+							<td>
+								<input type="password" name="yuniq_ai_settings[bale_bot_token]" value="<?php echo esc_attr( empty( $s['bale_bot_token'] ) ? '' : \Yuniq\Ai\Settings::SECRET_MASK ); ?>" class="regular-text" autocomplete="off" dir="ltr" />
+								<p class="description">پیام‌رسان بله هم مثل تلگرام یک ربات و یک توکن دارد؛ از ربات سازنده ربات در بله بگیرید. راهنمای قدم‌به‌قدم: <a href="<?php echo esc_url( admin_url( 'admin.php?page=yuniq-ai-guide#yq-g-notify' ) ); ?>">فعال‌سازی بله ↗</a></p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">شناسه چت بله (Chat ID)</th>
+							<td>
+								<input type="text" name="yuniq_ai_settings[bale_chat_id]" value="<?php echo esc_attr( isset( $s['bale_chat_id'] ) ? $s['bale_chat_id'] : '' ); ?>" class="regular-text" dir="ltr" />
+								<p class="description"><strong>قبل از هر چیز، در بله ربات خودتان را پیدا کنید و یک‌بار دکمه Start (یا /start) را بزنید</strong> — بدون این کار، با توکن و شناسه چت درست هم هیچ پیامی نمی‌رسد.</p>
+								<?php if ( ! empty( $s['bale_bot_token'] ) && ! empty( $s['bale_chat_id'] ) ) : ?>
+									<p class="description"><span class="yuniq-ai-badge-ok">فعال</span> توکن و شناسه چت هر دو وارد شده‌اند؛ با دکمه «ارسال اعلان آزمایشی» در صفحه «وضعیت و خطاها» مطمئن شوید واقعاً می‌رسد.</p>
+								<?php elseif ( ! empty( $s['bale_bot_token'] ) || ! empty( $s['bale_chat_id'] ) ) : ?>
+									<p class="description"><span class="yuniq-ai-badge-warn">ناقص</span> تا هر دو فیلد (توکن و شناسه چت) پر نشوند، اعلان بله ارسال نمی‌شود.</p>
+								<?php endif; ?>
 							</td>
 						</tr>
 					</table>

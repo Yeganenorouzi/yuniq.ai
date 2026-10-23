@@ -342,6 +342,11 @@ final class Text {
 	 * Reduce a client-supplied session id to the shape the plugin issues:
 	 * letters, digits and dashes, at most 64 characters (the column width).
 	 *
+	 * The minimum length is deliberately close to a real id (the browser
+	 * always sends a 36-character UUIDv4): this id is the only thing that
+	 * guards a visitor's live-support conversation on the public REST
+	 * routes, so a short, easily brute-forced value must never validate.
+	 *
 	 * @param mixed $raw Value from the request.
 	 * @return string Empty when nothing usable is left.
 	 */
@@ -349,7 +354,7 @@ final class Text {
 		$clean = preg_replace( '/[^A-Za-z0-9\-]/', '', is_scalar( $raw ) ? (string) $raw : '' );
 		$clean = substr( (string) $clean, 0, 64 );
 
-		return strlen( $clean ) >= 8 ? $clean : '';
+		return strlen( $clean ) >= 20 ? $clean : '';
 	}
 
 	/**

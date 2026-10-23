@@ -23,7 +23,7 @@ Yuniq.ai indexes your WordPress content into a knowledge base and passes it to a
 - **گزینه‌های انتخابی** — بازدیدکننده به‌جای تایپ، از «گزینه‌های شروع گفتگو» و گزینه‌های پیشنهادی زیر هر پاسخ انتخاب می‌کند؛ مدیر هم لحن، طول و زبان پاسخ و شیوه لینک‌دهی را با یک انتخاب تنظیم می‌کند
 - **گفتگوی ماندگار** — با رفتن به صفحه دیگر گفتگو پاک نمی‌شود؛ دکمه «گفتگوی تازه» برای شروع دوباره
 - **پایگاه دانش همیشه به‌روز** — هر نوشته یا محصولی که ذخیره، ویرایش یا حذف شود خودکار همگام می‌شود
-- **اتصال به کارشناس انسانی** — دکمه‌ی ثابت «صحبت با کارشناس» + پیشنهاد خودکار وقتی هوش مصنوعی نمی‌تواند کمک کند؛ پنل «پشتیبانی زنده» در مدیریت با اعلان ایمیل و تلگرام
+- **اتصال به کارشناس انسانی** — دکمه‌ی ثابت «صحبت با کارشناس» + پیشنهاد خودکار وقتی هوش مصنوعی نمی‌تواند کمک کند؛ پنل «پشتیبانی زنده» در مدیریت با اعلان ایمیل، تلگرام و بله
 - **کارت محصول هوشمند** — معرفی محصول ووکامرس با تصویر، قیمت و وضعیت موجودی واقعی، درست داخل گفتگو
 - **فرم دریافت سرنخ داخل گفتگو** — فرم مشاوره/تماس قابل‌تنظیم که هوش مصنوعی در لحظه‌ی مناسب نمایش می‌دهد
 - **حالت صفحه‌ی کامل** — شورت‌کد `[yuniq_ai_page]` برای نمایش دستیار به‌صورت یک صفحه‌ی اختصاصی
@@ -34,6 +34,7 @@ Yuniq.ai indexes your WordPress content into a knowledge base and passes it to a
 - **جست‌وجوی بهینه‌شده برای فارسی** — یکسان‌سازی ی/ي، ک/ك، نیم‌فاصله و ارقام فارسی/عربی
 - **دسترسی‌پذیری** — ناوبری کامل با کیبورد، تله‌ی فوکوس، `aria-modal` و احترام به `prefers-reduced-motion`
 - پایگاه دانش خودکار از نوشته‌ها، برگه‌ها، محصولات ووکامرس (با قیمت، SKU و موجودی) و دسته‌بندی‌ها
+- **هر نوع پست سفارشی** — انواع پست ساخته‌شده با JetEngine، ACF یا هر روش دیگر (مثلاً محصولات یک تم اختصاصی بدون ووکامرس) هم قابل انتخاب و ایندکس هستند؛ فیلدهای سفارشی هر کدام تک‌به‌تک با برچسب منبع (ACF، JetEngine، فیلد عمومی) قابل انتخاب‌اند
 - سازگار با OpenAI و هر سرویس سازگار با `chat/completions` (از جمله سرویس‌های ایرانی ریالی)
 - ویجت شناور با موقعیت قابل تنظیم، فیلتر مسیرها، کارت‌های اقدام سریع و داشبورد آمار گفتگوها
 - محدودیت نرخ درخواست بر اساس IP و نشست روی endpoint عمومی
@@ -68,7 +69,7 @@ composer lint:fix    # اصلاح خودکار
 | `src/Admin/` | صفحات مدیریت و کنترلر AJAX خزنده |
 | `src/Frontend/` | ویجت شناور گفتگو و شورت‌کد صفحه‌ی کامل |
 | `src/LiveSupport/` | مخزن گفتگوهای پشتیبانی زنده و سرنخ‌ها |
-| `src/Notifications/` | ارسال اعلان (ایمیل و تلگرام) برای درخواست کارشناس و سرنخ جدید |
+| `src/Notifications/` | ارسال اعلان (ایمیل، تلگرام و بله) برای درخواست کارشناس و سرنخ جدید |
 | `src/Setup/` | فعال‌سازی، غیرفعال‌سازی و تعریف جدول‌ها |
 | `src/Support/` | محدودکننده نرخ و ابزار نرمال‌سازی متن فارسی |
 
@@ -94,7 +95,7 @@ composer lint:fix    # اصلاح خودکار
 | `yuniq_ai_powered_by_html` | تغییر یا حذف امضای زیر پنل |
 | `yuniq_ai_client_ip` | تعیین IP پشت پراکسی یا CDN |
 | `yuniq_ai_booted` | دسترسی به سرویس‌کانتینر پس از راه‌اندازی |
-| `yuniq_ai_notify_channels` | افزودن کانال اعلان سفارشی برای پشتیبانی زنده |
+| `yuniq_ai_notify_channels` | افزودن کانال اعلان سفارشی برای پشتیبانی زنده (علاوه بر ایمیل، تلگرام و بله) |
 
 ### داده‌ها
 
@@ -110,7 +111,7 @@ Yuniq.ai turns a WordPress site into an interactive assistant. It crawls your co
 
 ### Highlights
 
-- **Human handoff** — a persistent "talk to a human" control plus automatic escalation when the AI can't help, with a dedicated Live Support inbox in wp-admin and email/Telegram notifications
+- **Human handoff** — a persistent "talk to a human" control plus automatic escalation when the AI can't help, with a dedicated Live Support inbox in wp-admin and email/Telegram/Bale notifications
 - **AI-triggered product cards** — grounded in real indexed WooCommerce price/stock, not model guesses
 - **In-chat lead-capture form** — a configurable consultation/contact form the AI surfaces at the right moment
 - **Full-page mode** — the `[yuniq_ai_page]` shortcode renders the assistant as a dedicated page instead of a floating widget

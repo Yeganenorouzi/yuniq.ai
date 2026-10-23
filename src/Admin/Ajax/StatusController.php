@@ -69,13 +69,16 @@ final class StatusController implements HookableInterface {
 
 		$results = $this->notifier->send_test();
 
+		// Only reachable if a `yuniq_ai_notify_channels` filter removed every
+		// channel outright — the built-in two are always attempted by a test.
 		if ( ! $results ) {
-			wp_send_json_error( array( 'message' => __( 'هیچ کانال اعلانی فعال نیست. ایمیل یا تلگرام را در تب «پشتیبانی زنده» انتخاب و ذخیره کنید.', 'yuniq-ai' ) ) );
+			wp_send_json_error( array( 'message' => __( 'هیچ کانال اعلانی در دسترس نیست.', 'yuniq-ai' ) ) );
 		}
 
 		$labels = array(
 			'email'    => __( 'ایمیل', 'yuniq-ai' ),
 			'telegram' => __( 'تلگرام', 'yuniq-ai' ),
+			'bale'     => __( 'بله', 'yuniq-ai' ),
 		);
 		$lines  = array();
 		$failed = false;
@@ -83,11 +86,15 @@ final class StatusController implements HookableInterface {
 		foreach ( $results as $channel => $result ) {
 			$label = isset( $labels[ $channel ] ) ? $labels[ $channel ] : $channel;
 
-			if ( true === $result ) {
-				$lines[] = '✓ ' . $label . ': ' . __( 'ارسال شد', 'yuniq-ai' );
+			if ( $result['ok'] ) {
+				$lines[] = '✓ ' . $label . ': ' . $result['message'];
+			} elseif ( ! $result['configured'] ) {
+				// Not set up at all — informational, not a failure: a site
+				// that only wants email must not see this as something broken.
+				$lines[] = '· ' . $label . ': ' . Logger::redact( $result['message'] );
 			} else {
 				$failed  = true;
-				$lines[] = '✕ ' . $label . ': ' . Logger::redact( $result );
+				$lines[] = '✕ ' . $label . ': ' . Logger::redact( $result['message'] );
 			}
 		}
 

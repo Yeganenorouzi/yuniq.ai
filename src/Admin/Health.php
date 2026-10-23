@@ -10,6 +10,7 @@ namespace Yuniq\Ai\Admin;
 
 use Yuniq\Ai\Ai\Client;
 use Yuniq\Ai\Kb\Repository as KnowledgeBase;
+use Yuniq\Ai\Notifications\Dispatcher;
 use Yuniq\Ai\Settings;
 use Yuniq\Ai\Setup\Schema;
 use Yuniq\Ai\Support\Logger;
@@ -27,6 +28,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Health {
 
 	/**
+	 * Marks the "index your content" setup step as deliberately skipped
+	 * (an empty site has nothing to index yet), so the wizard does not
+	 * lock an owner out forever over a step that can never finish.
+	 */
+	const INDEX_SKIPPED_OPTION = 'yuniq_ai_wizard_index_skipped';
+
+	/**
 	 * Plugin settings.
 	 *
 	 * @var Settings
@@ -39,6 +47,17 @@ final class Health {
 	 * @var KnowledgeBase
 	 */
 	private $knowledge_base;
+
+	/**
+	 * Per-request cache: is_setup_locked() ends up called several times
+	 * on the same request (building the menu, guarding every other
+	 * screen, rendering the settings page), and setup_steps() always
+	 * includes a real knowledge-base COUNT(*) query — worth avoiding
+	 * three times over for an answer that cannot change mid-request.
+	 *
+	 * @var array|null
+	 */
+	private $steps_cache;
 
 	/**
 	 * Constructor.
@@ -57,12 +76,16 @@ final class Health {
 	 * @return array<int,array{done:bool,title:string,text:string,url:string,action:string}>
 	 */
 	public function setup_steps() {
+		if ( null !== $this->steps_cache ) {
+			return $this->steps_cache;
+		}
+
 		$has_key   = '' !== (string) $this->settings->get( 'api_key', '' );
 		$last_ok   = (int) get_option( Client::LAST_SUCCESS_OPTION, 0 );
 		$documents = $this->knowledge_base->get_count();
 		$base      = admin_url( 'admin.php?page=' );
 
-		return array(
+		$this->steps_cache = array(
 			array(
 				'done'   => $has_key,
 				'title'  => 'کلید API را وارد کنید',
@@ -78,7 +101,7 @@ final class Health {
 				'action' => 'رفتن به تست اتصال',
 			),
 			array(
-				'done'   => $documents > 0,
+				'done'   => $documents > 0 || (bool) get_option( self::INDEX_SKIPPED_OPTION, false ),
 				'title'  => 'محتوای سایت را ایندکس کنید',
 				'text'   => 'تا دستیار محصولات، خدمات و مقالات شما را بشناسد.',
 				'url'    => $base . AdminPages::KNOWLEDGE_SLUG,
@@ -92,6 +115,45 @@ final class Health {
 				'action' => 'رفتن به تنظیمات',
 			),
 		);
+
+		return $this->steps_cache;
+	}
+
+	/**
+	 * Whether every other screen should redirect to the setup wizard.
+	 *
+	 * A direct, live read of the four steps — deliberately not a
+	 * persisted "finished once, stays finished" flag. An earlier version
+	 * tried that, keyed off an option Setup\Activator only ever wrote on
+	 * a genuinely fresh activation; a site that had the plugin active
+	 * since before this gate existed never got that option at all and so
+	 * was silently never locked, no matter how unfinished its setup
+	 * actually was. Checking live avoids that gap entirely, at the cost
+	 * of re-locking if an owner later clears, say, the API key — which,
+	 * for a page whose whole job is talking to that key, is arguably
+	 * correct anyway.
+	 *
+	 * @return bool
+	 */
+	public function is_setup_locked() {
+		return ! $this->is_setup_finished();
+	}
+
+	/**
+	 * Whether every step is currently satisfied — the wizard's own last
+	 * action checks this right after saving, to flip the lock open the
+	 * moment the owner finishes it, in whatever order they did the steps.
+	 *
+	 * @return bool
+	 */
+	public function is_setup_finished() {
+		foreach ( $this->setup_steps() as $step ) {
+			if ( ! $step['done'] ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -174,14 +236,24 @@ final class Health {
 
 		// --- Live support ------------------------------------------------------
 		if ( $this->settings->get( 'live_support_enabled' ) ) {
-			$channels = (array) $this->settings->get( 'notify_channels', array() );
+			$ready        = Dispatcher::channel_readiness( $this->settings );
+			$half_started = array();
 
-			if ( ! $channels ) {
-				$checks[] = self::check( 'warn', 'هیچ کانال اعلانی انتخاب نشده', 'پشتیبانی زنده روشن است ولی از درخواست‌های جدید باخبر نمی‌شوید. ایمیل یا تلگرام را در تب «پشتیبانی زنده» فعال کنید.' );
-			} elseif ( in_array( 'telegram', $channels, true ) && ( ! $this->settings->get( 'telegram_bot_token' ) || ! $this->settings->get( 'telegram_chat_id' ) ) ) {
-				$checks[] = self::check( 'fail', 'اعلان تلگرام ناقص است', 'توکن ربات یا شناسه چت وارد نشده است.' );
+			foreach ( array( 'telegram' => 'تلگرام', 'bale' => 'بله' ) as $key => $label ) {
+				$has_token   = (bool) $this->settings->get( $key . '_bot_token' );
+				$has_chat_id = (bool) $this->settings->get( $key . '_chat_id' );
+
+				if ( $has_token !== $has_chat_id ) {
+					$half_started[] = $label;
+				}
+			}
+
+			if ( ! $ready['email'] && ! $ready['telegram'] && ! $ready['bale'] ) {
+				$checks[] = self::check( 'warn', 'هیچ کانال اعلانی تنظیم نشده', 'پشتیبانی زنده روشن است ولی از درخواست‌های جدید باخبر نمی‌شوید. ایمیل، یا توکن و شناسه چت تلگرام/بله را در تب «پشتیبانی زنده» وارد و ذخیره کنید.' );
+			} elseif ( $half_started ) {
+				$checks[] = self::check( 'warn', 'اعلان ' . implode( ' و ', $half_started ) . ' ناقص است', 'فقط یکی از توکن ربات یا شناسه چت وارد شده؛ تا هر دو پر نشوند آن کانال ارسال نمی‌شود. بقیه کانال‌های تنظیم‌شده طبق‌معمول کار می‌کنند.' );
 			} else {
-				$checks[] = self::check( 'ok', 'اعلان پشتیبانی زنده تنظیم شده', 'با دکمه «ارسال اعلان آزمایشی» در همین صفحه امتحانش کنید.' );
+				$checks[] = self::check( 'ok', 'اعلان پشتیبانی زنده تنظیم شده', 'با دکمه «ارسال اعلان آزمایشی» در همین صفحه امتحانش کنید. برای تلگرام/بله، یادتان باشد قبلاً یک‌بار /start را به ربات خودتان زده باشید.' );
 			}
 		}
 

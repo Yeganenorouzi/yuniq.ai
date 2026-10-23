@@ -445,7 +445,7 @@ final class Indexer {
 		}
 
 		if ( $this->settings->get( 'index_custom_fields' ) ) {
-			$fields = $this->custom_fields( $post->ID );
+			$fields = $this->custom_fields( $post->ID, $post->post_type );
 
 			if ( $fields ) {
 				$metadata['fields'] = $fields;
@@ -528,9 +528,11 @@ final class Indexer {
 			$types = array_values( $types );
 		}
 
-		if ( in_array( 'product', $types, true ) && ! class_exists( 'WooCommerce' ) ) {
-			$types = array_values( array_diff( $types, array( 'product' ) ) );
-		}
+		// Drop a type that no longer exists — e.g. WooCommerce was
+		// deactivated after 'product' was selected. A 'product' post type
+		// registered by a theme or ACF/JetEngine instead of WooCommerce is
+		// unaffected: it is still registered, so post_type_exists() keeps it.
+		$types = array_values( array_filter( $types, 'post_type_exists' ) );
 
 		return $types ? $types : array( 'post', 'page' );
 	}
@@ -727,17 +729,24 @@ final class Indexer {
 	}
 
 	/**
-	 * Public custom fields of a post (ACF and the like). Keys starting
-	 * with an underscore are WordPress-internal and are never read.
+	 * Public custom fields of a post (ACF, JetEngine and the like). Keys
+	 * starting with an underscore are WordPress-internal and are never
+	 * read; a key the owner unchecked on the crawler tab's field picker
+	 * is skipped the same way.
 	 *
-	 * @param int $post_id Post id.
+	 * @param int    $post_id   Post id.
+	 * @param string $post_type Post type, to look up its excluded fields.
 	 * @return array<string,string>
 	 */
-	private function custom_fields( $post_id ) {
+	private function custom_fields( $post_id, $post_type ) {
+		$excluded   = (array) $this->settings->get( 'excluded_fields', array() );
+		$excluded   = isset( $excluded[ $post_type ] ) && is_array( $excluded[ $post_type ] ) ? $excluded[ $post_type ] : array();
+		$acf_labels = function_exists( 'get_field_objects' ) ? (array) get_field_objects( $post_id, false, false ) : array();
+
 		$out = array();
 
 		foreach ( (array) get_post_meta( $post_id ) as $key => $values ) {
-			if ( '' === $key || '_' === $key[0] || ! isset( $values[0] ) ) {
+			if ( '' === $key || '_' === $key[0] || ! isset( $values[0] ) || in_array( $key, $excluded, true ) ) {
 				continue;
 			}
 
@@ -754,7 +763,15 @@ final class Indexer {
 				continue;
 			}
 
-			$out[ str_replace( array( '_', '-' ), ' ', sanitize_text_field( $key ) ) ] = \Yuniq\Ai\Support\Text::truncate( $value, 200, '…' );
+			// The field's real ACF label when one is registered (e.g. «رنگ
+			// موجود» instead of the raw key `_v2_color_opt`); otherwise the
+			// key itself, lightly cleaned up — the same label the owner
+			// saw next to its checkbox on the crawler tab.
+			$label = isset( $acf_labels[ $key ]['label'] ) && '' !== $acf_labels[ $key ]['label']
+				? (string) $acf_labels[ $key ]['label']
+				: str_replace( array( '_', '-' ), ' ', sanitize_text_field( $key ) );
+
+			$out[ $label ] = \Yuniq\Ai\Support\Text::truncate( $value, 200, '…' );
 
 			if ( count( $out ) >= 15 ) {
 				break;

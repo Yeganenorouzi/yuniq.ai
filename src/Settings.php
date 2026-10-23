@@ -38,7 +38,7 @@ final class Settings {
 	/**
 	 * Settings stored encrypted (see {@see Support\Secret}).
 	 */
-	const SECRET_KEYS = array( 'api_key', 'telegram_bot_token' );
+	const SECRET_KEYS = array( 'api_key', 'telegram_bot_token', 'bale_bot_token' );
 
 	/**
 	 * Cached option array for this request.
@@ -98,6 +98,12 @@ final class Settings {
 			'wc_skip_outofstock'    => false,
 			'wc_skip_hidden'        => true,
 			'index_custom_fields'   => false,
+			// Per post type, the custom field keys (ACF, JetEngine, or any
+			// other plugin that stores values as plain post meta) left
+			// unchecked on the crawler tab. Fields not listed here yet are
+			// still indexed — only an explicit uncheck excludes one — so a
+			// brand-new field a plugin adds later is included by default.
+			'excluded_fields'       => array(),
 			'site_profile'          => true,
 			'context_detail'        => 'normal',
 			'business_info'         => '',
@@ -194,6 +200,8 @@ final class Settings {
 			'notify_email'          => get_option( 'admin_email' ),
 			'telegram_bot_token'    => '',
 			'telegram_chat_id'      => '',
+			'bale_bot_token'        => '',
+			'bale_chat_id'          => '',
 			'lead_forms'            => array(
 				array(
 					'key'           => 'consult',
@@ -225,8 +233,14 @@ final class Settings {
 			'daily_limit'           => '0',
 			'data_retention'        => '0',
 
-			// General.
-			'enabled'               => true,
+			// General. Off until the owner explicitly turns it on (the 4th
+			// setup step): a freshly activated site has no API key yet, so
+			// a widget visible by default would just show every visitor a
+			// chat bubble that answers with an apology. Once the settings
+			// screen is saved even once, this is always the submitted
+			// checkbox state from then on — this default only covers the
+			// window between activation and that first save.
+			'enabled'               => false,
 		);
 	}
 
@@ -355,6 +369,8 @@ final class Settings {
 			? array_values( array_map( 'sanitize_key', $input['custom_post_types'] ) )
 			: array();
 
+		$output['excluded_fields'] = $this->derive_excluded_fields( $input, (array) $output['excluded_fields'] );
+
 		$output['content_types'] = $this->derive_content_types( $output );
 
 		$output['context_detail'] = self::pick( $input, 'context_detail', array_keys( self::choices( 'context_detail' ) ), 'normal' );
@@ -447,21 +463,28 @@ final class Settings {
 			? sanitize_text_field( $input['agent_display_name'] )
 			: 'کارشناس پشتیبانی';
 
+		// Not used to gate sending any more (see Notifications\Dispatcher::
+		// channel_readiness()) — kept only so a `yuniq_ai_notify_channels`
+		// filter adding a custom channel still has somewhere to read an
+		// owner's on/off choice for it from, same as before.
 		$output['notify_channels'] = ( isset( $input['notify_channels'] ) && is_array( $input['notify_channels'] ) )
-			? array_values( array_intersect( array_map( 'sanitize_key', $input['notify_channels'] ), array( 'email', 'telegram' ) ) )
+			? array_values( array_intersect( array_map( 'sanitize_key', $input['notify_channels'] ), array( 'email', 'telegram', 'bale' ) ) )
 			: array();
 
 		$notify_email           = isset( $input['notify_email'] ) ? sanitize_email( $input['notify_email'] ) : '';
 		$output['notify_email'] = $notify_email ? $notify_email : get_option( 'admin_email' );
 
-		if ( isset( $input['telegram_bot_token'] ) ) {
-			$submitted_token = trim( sanitize_text_field( $input['telegram_bot_token'] ) );
-			if ( self::SECRET_MASK !== $submitted_token && ! Support\Secret::is_encrypted( $submitted_token ) ) {
-				$output['telegram_bot_token'] = $submitted_token;
+		foreach ( array( 'telegram_bot_token', 'bale_bot_token' ) as $secret_key ) {
+			if ( isset( $input[ $secret_key ] ) ) {
+				$submitted_token = trim( sanitize_text_field( $input[ $secret_key ] ) );
+				if ( self::SECRET_MASK !== $submitted_token && ! Support\Secret::is_encrypted( $submitted_token ) ) {
+					$output[ $secret_key ] = $submitted_token;
+				}
 			}
 		}
 
 		$output['telegram_chat_id'] = isset( $input['telegram_chat_id'] ) ? sanitize_text_field( $input['telegram_chat_id'] ) : '';
+		$output['bale_chat_id']     = isset( $input['bale_chat_id'] ) ? sanitize_text_field( $input['bale_chat_id'] ) : '';
 
 		if ( isset( $input['lead_forms'] ) && is_array( $input['lead_forms'] ) ) {
 			$output['lead_forms'] = $this->sanitize_lead_forms( $input['lead_forms'] );
@@ -605,6 +628,17 @@ final class Settings {
 	}
 
 	/**
+	 * Keep a submitted post-meta key comparable to the real column value:
+	 * same character set `sanitize_key()` allows, but case is preserved.
+	 *
+	 * @param mixed $key Raw value.
+	 * @return string
+	 */
+	private static function clean_meta_key( $key ) {
+		return is_scalar( $key ) ? preg_replace( '/[^A-Za-z0-9_\-]/', '', (string) $key ) : '';
+	}
+
+	/**
 	 * Translate the source checkboxes into a post-type list for WP_Query.
 	 *
 	 * @param array $output Settings being built.
@@ -629,6 +663,55 @@ final class Settings {
 		$types = array_values( array_unique( array_filter( $types ) ) );
 
 		return $types ? $types : array( 'post', 'page' );
+	}
+
+	/**
+	 * Translate the crawler tab's per-post-type field checkboxes into the
+	 * stored exclude list.
+	 *
+	 * The form submits every field it knows about for a post type as
+	 * `all_fields[post_type]` (one hidden, comma-separated value, built
+	 * from the same live lookup the checkboxes were drawn from) alongside
+	 * `included_fields[post_type][]` for the ones left checked; a field
+	 * present in the first but not the second was unchecked. A post type
+	 * whose `all_fields` entry is missing — its checklist was never
+	 * rendered this submission, e.g. the type is not selected right now —
+	 * keeps whatever was stored for it before, instead of being read as
+	 * "everything excluded".
+	 *
+	 * @param array $input    Submitted values.
+	 * @param array $existing Previously stored exclude list.
+	 * @return array<string,string[]>
+	 */
+	private function derive_excluded_fields( array $input, array $existing ) {
+		$all      = isset( $input['all_fields'] ) && is_array( $input['all_fields'] ) ? $input['all_fields'] : array();
+		$included = isset( $input['included_fields'] ) && is_array( $input['included_fields'] ) ? $input['included_fields'] : array();
+
+		foreach ( $all as $post_type => $csv ) {
+			$post_type = sanitize_key( $post_type );
+
+			if ( '' === $post_type ) {
+				continue;
+			}
+
+			// Not sanitize_key(): it lowercases, and a meta key with any
+			// uppercase character would then never match the real column
+			// value Indexer::custom_fields() compares it against.
+			$known = array_values( array_filter( array_map( array( __CLASS__, 'clean_meta_key' ), explode( ',', (string) $csv ) ) ) );
+			$kept  = isset( $included[ $post_type ] ) && is_array( $included[ $post_type ] )
+				? array_map( array( __CLASS__, 'clean_meta_key' ), $included[ $post_type ] )
+				: array();
+
+			$excluded = array_values( array_diff( $known, $kept ) );
+
+			if ( $excluded ) {
+				$existing[ $post_type ] = $excluded;
+			} else {
+				unset( $existing[ $post_type ] );
+			}
+		}
+
+		return $existing;
 	}
 
 	/**

@@ -13,8 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Encrypts the API key and the Telegram token before they are written to
- * the options table.
+ * Encrypts the AI provider's API key and the Telegram/Bale bot tokens
+ * before they are written to the options table.
  *
  * The key is derived from the site's secret salts in wp-config.php, which
  * are not in the database. A leaked database dump, a backup file or an SQL

@@ -31,6 +31,23 @@
 		$('#yuniq-ai-save-status').text(i18n.saving || 'در حال ذخیره...');
 	});
 
+	// Guided setup, step 4: turning the assistant on before a key is even
+	// typed in just shows every visitor a chat button that cannot answer.
+	// This does not block the save — the owner may have a reason — it only
+	// asks them to confirm once, the same way the design-reset button does.
+	$settingsForm.on('submit', function (e) {
+		var $enabled = $('#yuniq-ai-enabled');
+		var $apiKey = $('#yuniq-ai-api-key');
+		if (!$enabled.length || !$apiKey.length || !$enabled.is(':checked')) return;
+
+		if ('' === $.trim($apiKey.val()) && !confirm(i18n.confirmEnableNoKey || 'هنوز کلید API وارد نکرده‌اید؛ با فعال‌سازی، بازدیدکنندگان دکمه گفتگو را می‌بینند ولی پاسخی نمی‌گیرند. همین الان فعال شود؟')) {
+			e.preventDefault();
+			submitting = false;
+			showTab('ai');
+			$apiKey.trigger('focus');
+		}
+	});
+
 	$(window).on('beforeunload', function () {
 		if (dirty && !submitting) return i18n.unsaved || 'تغییرات ذخیره‌نشده دارید';
 	});
@@ -222,6 +239,12 @@
 				var data = (res && res.data) || {};
 				if (res && res.success) {
 					showResult(true, '✓ ' + data.message);
+					// Only present on the wizard's "test connection" step: the
+					// test AJAX call already recorded the success server-side
+					// (ConnectionController::test_connection()), so revealing
+					// this here — rather than requiring a reload to find out —
+					// just reflects what is already true.
+					$('#yuniq-ai-wizard-step2-next').show();
 				} else {
 					showResult(false, '✕ ' + (data.message || i18n.error), data.url ? 'POST ' + data.url + '/chat/completions' : '');
 				}
@@ -616,6 +639,11 @@
 		$stopBtn.prop('disabled', true);
 		$msg.text(i18n.stopping || 'در حال توقف...');
 		post('yuniq_ai_stop_crawl', { log_id: crawl.logId });
+	});
+
+	/* ---------- Setup wizard: skip the index step ---------- */
+	$('#yuniq-ai-skip-index').on('click', function (e) {
+		if (!confirm(i18n.confirmSkipIndex || '')) e.preventDefault();
 	});
 
 	/* ---------- Knowledge base maintenance ---------- */

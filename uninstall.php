@@ -26,6 +26,7 @@ function yuniq_ai_uninstall_site() {
 		'yuniq_ai_error_log',
 		'yuniq_ai_error_unseen',
 		'yuniq_ai_last_success',
+		'yuniq_ai_activation_redirect',
 	);
 
 	wp_clear_scheduled_hook( 'yuniq_ai_daily_cleanup' );

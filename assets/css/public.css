@@ -1112,22 +1112,6 @@
 	padding: 4px 10px;
 	animation: none;
 }
-#yuniq-ai-root .yuniq-ai-need-human {
-	padding: 0;
-}
-#yuniq-ai-root .yuniq-ai-need-human button {
-	padding: 7px 16px;
-	font-size: 12.5px;
-	font-weight: 500;
-	color: var(--yuniq-ai-primary);
-	background: var(--yuniq-ai-primary-soft);
-	border: 1px solid var(--yuniq-ai-primary);
-	border-radius: 999px;
-	transition: background var(--yuniq-ai-dur-fast) linear;
-}
-#yuniq-ai-root .yuniq-ai-need-human button:hover {
-	background: var(--yuniq-ai-primary-ring);
-}
 
 /* Agent reply — same bubble language as the assistant, distinguished by a
    secondary-color accent so a visitor can tell a human answered. */
@@ -1370,6 +1354,18 @@
 #yuniq-ai-root .yuniq-ai-reply:hover {
 	background: var(--yuniq-ai-primary-soft);
 	border-color: var(--yuniq-ai-primary);
+}
+
+/* The "talk to an expert" chip added to the same row — same shape as the
+   assistant's own suggestions, accented with the secondary colour so it
+   reads as a different kind of action (hands off to a human). */
+#yuniq-ai-root .yuniq-ai-reply-agent {
+	color: var(--yuniq-ai-secondary);
+	border-color: var(--yuniq-ai-secondary);
+}
+#yuniq-ai-root .yuniq-ai-reply-agent:hover {
+	background: var(--yuniq-ai-secondary);
+	color: #fff;
 }
 
 /* A conversation with a human cannot be reset from under the agent. */

@@ -339,7 +339,15 @@ final class LiveSupportController implements HookableInterface {
 	 */
 	public function handle_get_messages( WP_REST_Request $request ) {
 		$session_id = Text::session_id( $request->get_param( 'session_id' ) );
-		$after_id   = absint( $request->get_param( 'after_id' ) );
+
+		// The session id is the only thing guarding this conversation's
+		// transcript; without a limit here, an attacker could poll through
+		// session ids to find and read someone else's.
+		if ( $this->ip_limited( 'handoff-poll-ip:', self::POLL_IP_LIMIT ) ) {
+			return $this->error( __( 'تعداد درخواست‌ها زیاد است. لطفاً کمی صبر کنید.', 'yuniq-ai' ), 429 );
+		}
+
+		$after_id = absint( $request->get_param( 'after_id' ) );
 
 		$conversation = $this->live_support->get_conversation( $session_id );
 		$status       = $conversation ? $conversation['status'] : 'bot';
@@ -389,15 +397,27 @@ final class LiveSupportController implements HookableInterface {
 	}
 
 	/**
-	 * Count one notifying request against the caller's IP.
+	 * Requests allowed per IP for the polling endpoint inside the window.
+	 *
+	 * Far above the notification-sending limit: the widget alone polls one
+	 * open conversation every 4 seconds (~150 requests per window), and an
+	 * owner can have several tabs or devices open on the same connection.
+	 */
+	const POLL_IP_LIMIT = 300;
+
+	/**
+	 * Count one request against the caller's IP.
 	 *
 	 * @param string $bucket Bucket prefix.
+	 * @param int    $limit  Requests allowed inside the window. Defaults to
+	 *                       the limit for actions that each send a
+	 *                       notification (escalation, lead).
 	 * @return bool True when the caller is over the limit.
 	 */
-	private function ip_limited( $bucket ) {
+	private function ip_limited( $bucket, $limit = self::IP_LIMIT ) {
 		$ip = RateLimiter::client_ip( (string) $this->settings->get( 'ip_source', 'remote_addr' ) );
 
-		return '' !== $ip && $this->rate_limiter->hit( $bucket . $ip, self::IP_LIMIT, self::RATE_WINDOW );
+		return '' !== $ip && $this->rate_limiter->hit( $bucket . $ip, $limit, self::RATE_WINDOW );
 	}
 
 	/**

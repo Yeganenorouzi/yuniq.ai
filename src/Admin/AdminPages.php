@@ -15,6 +15,7 @@ use Yuniq\Ai\Kb\Indexer;
 use Yuniq\Ai\Kb\Repository as KnowledgeBase;
 use Yuniq\Ai\LiveSupport\Repository as LiveSupport;
 use Yuniq\Ai\Settings;
+use Yuniq\Ai\Setup\Activator;
 use Yuniq\Ai\Support\Assets;
 use Yuniq\Ai\Support\Logger;
 
@@ -129,8 +130,82 @@ final class AdminPages implements HookableInterface {
 	public function register_hooks() {
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
+		add_action( 'admin_init', array( $this, 'maybe_redirect_to_wizard' ) );
+		add_action( 'admin_init', array( $this, 'maybe_skip_index_step' ) );
+		add_action( 'admin_init', array( $this, 'maybe_lock_other_screens' ), 20 );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_filter( 'plugin_action_links_' . YUNIQ_AI_BASENAME, array( $this, 'add_settings_link' ) );
+	}
+
+	/**
+	 * Send a fresh install straight to the setup wizard on its first admin
+	 * request after activation, so a new user is walked through it instead
+	 * of landing on the plain plugins list and having to find it themselves.
+	 *
+	 * @return void
+	 */
+	public function maybe_redirect_to_wizard() {
+		if ( ! get_option( Activator::REDIRECT_OPTION ) ) {
+			return;
+		}
+
+		delete_option( Activator::REDIRECT_OPTION );
+
+		// Never redirect out of a bulk/multi-plugin activation, an AJAX
+		// request, or a user who cannot even see the plugin's screens.
+		if ( wp_doing_ajax() || isset( $_GET['activate-multi'] ) || ! current_user_can( self::CAPABILITY ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
+		exit;
+	}
+
+	/**
+	 * While the wizard is not finished, every other plugin screen bounces
+	 * back to it — the owner should not be able to poke around the
+	 * knowledge base, analytics or live-support inbox of an assistant that
+	 * is not even connected to an AI service yet.
+	 *
+	 * The guide stays open: it is reference material for finishing step
+	 * one, not a feature of its own.
+	 *
+	 * @return void
+	 */
+	public function maybe_lock_other_screens() {
+		if ( wp_doing_ajax() || ! current_user_can( self::CAPABILITY ) || ! $this->health->is_setup_locked() ) {
+			return;
+		}
+
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		if ( '' === $page || in_array( $page, array( self::MENU_SLUG, self::GUIDE_SLUG ), true ) || 0 !== strpos( $page, 'yuniq-ai' ) ) {
+			return;
+		}
+
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
+		exit;
+	}
+
+	/**
+	 * The wizard's "index" step offers a plain link (not a form, since
+	 * there is nothing else to submit) to skip it outright, for a brand
+	 * new site with nothing to index yet — without it, an empty site could
+	 * never satisfy that step and would stay locked out forever.
+	 *
+	 * @return void
+	 */
+	public function maybe_skip_index_step() {
+		if ( ! isset( $_GET['yuniq_ai_skip_index'] ) || ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		check_admin_referer( 'yuniq_ai_skip_index' );
+
+		update_option( Health::INDEX_SKIPPED_OPTION, true );
+
+		wp_safe_redirect( remove_query_arg( array( 'yuniq_ai_skip_index', '_wpnonce' ) ) );
+		exit;
 	}
 
 	/**
@@ -152,47 +227,52 @@ final class AdminPages implements HookableInterface {
 		add_submenu_page(
 			self::MENU_SLUG,
 			__( 'تنظیمات', 'yuniq-ai' ),
-			__( 'تنظیمات', 'yuniq-ai' ),
+			$this->health->is_setup_locked() ? __( 'راه‌اندازی', 'yuniq-ai' ) : __( 'تنظیمات', 'yuniq-ai' ),
 			self::CAPABILITY,
 			self::MENU_SLUG,
 			array( $this, 'render_settings_page' )
 		);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			__( 'پایگاه دانش', 'yuniq-ai' ),
-			__( 'پایگاه دانش', 'yuniq-ai' ),
-			self::CAPABILITY,
-			self::KNOWLEDGE_SLUG,
-			array( $this, 'render_knowledge_page' )
-		);
+		// Hidden while the wizard is unfinished: maybe_lock_other_screens()
+		// bounces a direct visit back to it anyway, so a menu entry that
+		// only leads to a bounce is worse than no entry at all.
+		if ( ! $this->health->is_setup_locked() ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				__( 'پایگاه دانش', 'yuniq-ai' ),
+				__( 'پایگاه دانش', 'yuniq-ai' ),
+				self::CAPABILITY,
+				self::KNOWLEDGE_SLUG,
+				array( $this, 'render_knowledge_page' )
+			);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			__( 'آمار و تحلیل', 'yuniq-ai' ),
-			__( 'آمار و تحلیل', 'yuniq-ai' ),
-			self::CAPABILITY,
-			self::ANALYTICS_SLUG,
-			array( $this, 'render_analytics_page' )
-		);
+			add_submenu_page(
+				self::MENU_SLUG,
+				__( 'آمار و تحلیل', 'yuniq-ai' ),
+				__( 'آمار و تحلیل', 'yuniq-ai' ),
+				self::CAPABILITY,
+				self::ANALYTICS_SLUG,
+				array( $this, 'render_analytics_page' )
+			);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			__( 'پشتیبانی زنده', 'yuniq-ai' ),
-			__( 'پشتیبانی زنده', 'yuniq-ai' ) . $this->pending_badge(),
-			self::CAPABILITY,
-			self::LIVE_SUPPORT_SLUG,
-			array( $this, 'render_live_support_page' )
-		);
+			add_submenu_page(
+				self::MENU_SLUG,
+				__( 'پشتیبانی زنده', 'yuniq-ai' ),
+				__( 'پشتیبانی زنده', 'yuniq-ai' ) . $this->pending_badge(),
+				self::CAPABILITY,
+				self::LIVE_SUPPORT_SLUG,
+				array( $this, 'render_live_support_page' )
+			);
 
-		add_submenu_page(
-			self::MENU_SLUG,
-			__( 'وضعیت و خطاها', 'yuniq-ai' ),
-			__( 'وضعیت و خطاها', 'yuniq-ai' ) . $this->count_badge( Logger::unseen() ),
-			self::CAPABILITY,
-			self::STATUS_SLUG,
-			array( $this, 'render_status_page' )
-		);
+			add_submenu_page(
+				self::MENU_SLUG,
+				__( 'وضعیت و خطاها', 'yuniq-ai' ),
+				__( 'وضعیت و خطاها', 'yuniq-ai' ) . $this->count_badge( Logger::unseen() ),
+				self::CAPABILITY,
+				self::STATUS_SLUG,
+				array( $this, 'render_status_page' )
+			);
+		}
 
 		add_submenu_page(
 			self::MENU_SLUG,
@@ -365,6 +445,7 @@ final class AdminPages implements HookableInterface {
 					'completedShort'  => __( 'تکمیل‌شده', 'yuniq-ai' ),
 					'error'           => __( 'خطایی رخ داد.', 'yuniq-ai' ),
 					'confirmClear'    => __( 'آیا مطمئن هستید که می‌خواهید کل پایگاه دانش را پاک کنید؟', 'yuniq-ai' ),
+					'confirmSkipIndex' => __( 'بدون ایندکس، دستیار فقط از «اطلاعات کسب‌وکار» و توضیحاتی که بعداً می‌نویسید استفاده می‌کند، نه از محتوای واقعی سایت. بعداً هر وقت خواستید از صفحه «پایگاه دانش» ایندکس را اجرا کنید. رد شدن از این مرحله؟', 'yuniq-ai' ),
 					'confirmRebuild'  => __( 'ابتدا داده‌های قبلی پاک و سپس ایندکس جدید اجرا می‌شود. ادامه می‌دهید؟', 'yuniq-ai' ),
 					'startIndex'      => __( 'شروع ایندکس‌گذاری', 'yuniq-ai' ),
 					'indexed'         => __( 'ایندکس‌شده:', 'yuniq-ai' ),
@@ -397,6 +478,7 @@ final class AdminPages implements HookableInterface {
 					'restFailText'      => __( 'مسیر REST افزونه مسدود است. معمولاً یک افزونه امنیتی یا فایروال، REST API را برای کاربران مهمان بسته است؛ مسیر /wp-json/yuniq-ai/ را در آن مجاز کنید.', 'yuniq-ai' ),
 					'insecureEndpoint'  => __( 'این آدرس با http شروع می‌شود؛ کلید API بدون رمز فرستاده می‌شود. تا حد امکان از https استفاده کنید.', 'yuniq-ai' ),
 					'saving'            => __( 'در حال ذخیره...', 'yuniq-ai' ),
+					'confirmEnableNoKey' => __( 'هنوز کلید API وارد نکرده‌اید؛ با فعال‌سازی، بازدیدکنندگان دکمه گفتگو را می‌بینند ولی پاسخی نمی‌گیرند. همین الان فعال شود؟', 'yuniq-ai' ),
 				),
 			)
 		);
@@ -415,7 +497,44 @@ final class AdminPages implements HookableInterface {
 		$settings    = $this->settings->all();
 		$setup_steps = $this->health->setup_steps();
 
+		if ( $this->health->is_setup_locked() ) {
+			$this->render_wizard( $setup_steps, $settings );
+
+			return;
+		}
+
 		require YUNIQ_AI_PATH . 'admin/views/settings-page.php';
+	}
+
+	/**
+	 * The gated setup wizard shown instead of the regular settings screen
+	 * until every step is done.
+	 *
+	 * @param array $setup_steps From Health::setup_steps().
+	 * @param array $settings    Current settings.
+	 * @return void
+	 */
+	private function render_wizard( array $setup_steps, array $settings ) {
+		$first_undone = count( $setup_steps );
+
+		foreach ( $setup_steps as $index => $step ) {
+			if ( ! $step['done'] ) {
+				$first_undone = $index + 1;
+				break;
+			}
+		}
+
+		// A step already done can be revisited (e.g. to fix a wrong key),
+		// but the URL cannot be used to jump ahead of what is actually done.
+		$requested    = isset( $_GET['yuniq_step'] ) ? absint( wp_unslash( $_GET['yuniq_step'] ) ) : $first_undone; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$current_step = ( $requested >= 1 && $requested <= $first_undone ) ? $requested : $first_undone;
+		$presets      = Presets::all();
+		$skip_index_url = wp_nonce_url(
+			add_query_arg( 'yuniq_ai_skip_index', '1' ),
+			'yuniq_ai_skip_index'
+		);
+
+		require YUNIQ_AI_PATH . 'admin/views/wizard-page.php';
 	}
 
 	/**

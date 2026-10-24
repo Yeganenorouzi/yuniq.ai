@@ -308,12 +308,7 @@ final class Settings {
 		$output['ai_provider'] = Ai\Presets::exists( $provider ) ? $provider : Ai\Presets::CUSTOM;
 
 		// The key is only replaced when the form actually carried a new one.
-		if ( isset( $input['api_key'] ) ) {
-			$submitted_key = trim( sanitize_text_field( $input['api_key'] ) );
-			if ( self::SECRET_MASK !== $submitted_key && ! Support\Secret::is_encrypted( $submitted_key ) ) {
-				$output['api_key'] = $submitted_key;
-			}
-		}
+		$output['api_key'] = $this->submitted_secret( $input, $output, 'api_key' );
 
 		$endpoint                = isset( $input['api_endpoint'] ) ? esc_url_raw( trim( $input['api_endpoint'] ) ) : '';
 		$output['api_endpoint']  = $endpoint ? $endpoint : 'https://api.openai.com/v1/chat/completions';
@@ -475,12 +470,7 @@ final class Settings {
 		$output['notify_email'] = $notify_email ? $notify_email : get_option( 'admin_email' );
 
 		foreach ( array( 'telegram_bot_token', 'bale_bot_token' ) as $secret_key ) {
-			if ( isset( $input[ $secret_key ] ) ) {
-				$submitted_token = trim( sanitize_text_field( $input[ $secret_key ] ) );
-				if ( self::SECRET_MASK !== $submitted_token && ! Support\Secret::is_encrypted( $submitted_token ) ) {
-					$output[ $secret_key ] = $submitted_token;
-				}
-			}
+			$output[ $secret_key ] = $this->submitted_secret( $input, $output, $secret_key );
 		}
 
 		$output['telegram_chat_id'] = isset( $input['telegram_chat_id'] ) ? sanitize_text_field( $input['telegram_chat_id'] ) : '';
@@ -519,6 +509,61 @@ final class Settings {
 		$this->flush();
 
 		return $output;
+	}
+
+	/**
+	 * Decide what a credential field keeps after a save.
+	 *
+	 * Three cases, and the third is the reason this is not inline any more:
+	 *
+	 * 1. Nothing submitted (the field is not on this form) — keep the stored
+	 *    value.
+	 * 2. The {@see self::SECRET_MASK} placeholder, which is all the form ever
+	 *    renders for a credential already on the server — keep it too; the
+	 *    owner did not touch the field.
+	 * 3. A value this very method already encrypted — keep it verbatim.
+	 *
+	 * That third case looks impossible from the form's side, and is not:
+	 * WordPress runs a `register_setting()` sanitize callback TWICE whenever
+	 * the stored option still equals the registered default. update_option()
+	 * sees `default_option_… === $old_value`, hands the save off to
+	 * add_option(), and add_option() sanitizes the already-sanitized array a
+	 * second time. On a fresh install that is exactly the state of the very
+	 * first save — the activator writes self::defaults() and nothing has
+	 * changed it yet — so the second pass was handed this method's own
+	 * encrypted output, rejected it as "not a new key", and fell back to the
+	 * empty stored one. The owner typed a key into step one of the wizard,
+	 * pressed "ذخیره و ادامه", and got step one back with an empty field and
+	 * "هنوز کلیدی ذخیره نشده".
+	 *
+	 * A decrypt check, not just the `yq1:` prefix, decides whether a value
+	 * really is ours: an arbitrary string starting with the prefix is not,
+	 * and would be stored as an unreadable credential.
+	 *
+	 * @param array  $input  Submitted values.
+	 * @param array  $output Values being built, carrying the stored value.
+	 * @param string $key    Setting name.
+	 * @return string Plain text, except when it is our own encrypted value
+	 *                coming back around; sanitize() encrypts either way.
+	 */
+	private function submitted_secret( array $input, array $output, $key ) {
+		$current = isset( $output[ $key ] ) ? (string) $output[ $key ] : '';
+
+		if ( ! isset( $input[ $key ] ) || ! is_scalar( $input[ $key ] ) ) {
+			return $current;
+		}
+
+		$submitted = trim( sanitize_text_field( (string) $input[ $key ] ) );
+
+		if ( Support\Secret::is_encrypted( $submitted ) ) {
+			return '' !== Support\Secret::decrypt( $submitted ) ? $submitted : $current;
+		}
+
+		if ( self::SECRET_MASK === $submitted ) {
+			return $current;
+		}
+
+		return $submitted;
 	}
 
 	/**

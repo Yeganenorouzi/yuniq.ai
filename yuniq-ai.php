@@ -1,13 +1,11 @@
 <?php
 /**
  * Plugin Name:       Yuniq.ai
- * Plugin URI:        https://github.com/Yeganenorouzi/yuniq-ai
  * Description:       دستیار هوشمند وب‌سایت شما: ویجت شناور گفتگو با هوش مصنوعی، پایگاه دانش خودکار از محتوای سایت، پشتیبانی کامل فارسی و RTL. — Turn any WordPress site into an AI assistant that answers from your own content.
  * Version:           1.6.4
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Yegane Norouzi (یگانه نوروزی)
- * Author URI:        https://github.com/Yeganenorouzi
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       yuniq-ai

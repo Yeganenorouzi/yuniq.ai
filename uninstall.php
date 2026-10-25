@@ -28,10 +28,12 @@ function yuniq_ai_uninstall_site() {
 		'yuniq_ai_last_success',
 		'yuniq_ai_activation_redirect',
 		'yuniq_ai_license',
+		'yuniq_ai_wizard_index_skipped',
 	);
 
 	wp_clear_scheduled_hook( 'yuniq_ai_daily_cleanup' );
 	wp_clear_scheduled_hook( 'yuniq_ai_license_check' );
+	wp_clear_scheduled_hook( 'yuniq_ai_scheduled_crawl' );
 
 	foreach ( $options as $option ) {
 		delete_option( $option );

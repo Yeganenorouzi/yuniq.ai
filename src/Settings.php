@@ -41,6 +41,11 @@ final class Settings {
 	const SECRET_KEYS = array( 'api_key', 'telegram_bot_token', 'bale_bot_token' );
 
 	/**
+	 * Hidden field marking a form that carries only some settings.
+	 */
+	const PARTIAL_FLAG = '_partial';
+
+	/**
 	 * Cached option array for this request.
 	 *
 	 * @var array|null
@@ -296,6 +301,46 @@ final class Settings {
 	 * @return array
 	 */
 	public function sanitize( $input ) {
+		$input = is_array( $input ) ? $input : array();
+
+		// The setup wizard posts small forms (step one: the AI connection;
+		// step four: the on/off switch). Run through the full sanitizer they
+		// would reset every field they do not carry to its default — step
+		// four used to put an AvalAI owner back on OpenAI's endpoint, so the
+		// key "vanished" right after the wizard said everything worked. A
+		// partial form therefore only changes the fields it actually sent.
+		if ( ! empty( $input[ self::PARTIAL_FLAG ] ) ) {
+			unset( $input[ self::PARTIAL_FLAG ] );
+
+			$sanitized = $this->sanitize_all( $input );
+			$existing  = get_option( self::OPTION_KEY, array() );
+			$output    = wp_parse_args( is_array( $existing ) ? $existing : array(), self::defaults() );
+
+			foreach ( array_keys( $input ) as $key ) {
+				if ( array_key_exists( $key, $sanitized ) ) {
+					$output[ $key ] = $sanitized[ $key ];
+				}
+			}
+
+			foreach ( self::SECRET_KEYS as $secret ) {
+				$output[ $secret ] = Support\Secret::encrypt( isset( $output[ $secret ] ) ? (string) $output[ $secret ] : '' );
+			}
+
+			$this->flush();
+
+			return $output;
+		}
+
+		return $this->sanitize_all( $input );
+	}
+
+	/**
+	 * Sanitize a complete settings submission (the main settings screen).
+	 *
+	 * @param array $input Raw submitted values.
+	 * @return array
+	 */
+	private function sanitize_all( array $input ) {
 		// options.php has already unslashed the submitted values. Unslashing
 		// again here ate every backslash in the custom CSS and the prompt
 		// (`content: "\201C"` came back as `content: "201C"`).

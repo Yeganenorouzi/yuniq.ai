@@ -90,6 +90,7 @@ $yq_guide_link = function ( $anchor, $label ) use ( $yq_guide ) {
 
 		<form method="post" action="options.php" id="yuniq-ai-settings-form">
 			<?php settings_fields( 'yuniq_ai_settings_group' ); ?>
+			<input type="hidden" name="yuniq_ai_settings[<?php echo esc_attr( \Yuniq\Ai\Settings::PARTIAL_FLAG ); ?>]" value="1" />
 			<table class="form-table">
 				<tr>
 					<th scope="row"><label for="yuniq-ai-provider">سرویس</label></th>
@@ -207,6 +208,7 @@ $yq_guide_link = function ( $anchor, $label ) use ( $yq_guide ) {
 		<?php $yq_guide_link( 'yq-g-use', 'بعد از فعال‌سازی، لحن و رفتار دستیار را چطور تنظیم کنم؟' ); ?>
 		<form method="post" action="options.php" id="yuniq-ai-settings-form">
 			<?php settings_fields( 'yuniq_ai_settings_group' ); ?>
+			<input type="hidden" name="yuniq_ai_settings[<?php echo esc_attr( \Yuniq\Ai\Settings::PARTIAL_FLAG ); ?>]" value="1" />
 			<table class="form-table">
 				<tr>
 					<th scope="row">فعال‌سازی دستیار</th>

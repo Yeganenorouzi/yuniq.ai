@@ -179,7 +179,7 @@ final class AdminPages implements HookableInterface {
 
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
-		if ( '' === $page || in_array( $page, array( self::MENU_SLUG, self::GUIDE_SLUG ), true ) || 0 !== strpos( $page, 'yuniq-ai' ) ) {
+		if ( '' === $page || in_array( $page, array( self::MENU_SLUG, self::GUIDE_SLUG, 'yuniq-ai-license' ), true ) || 0 !== strpos( $page, 'yuniq-ai' ) ) {
 			return;
 		}
 

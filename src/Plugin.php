@@ -23,6 +23,7 @@ use Yuniq\Ai\Frontend\Widget;
 use Yuniq\Ai\Kb\AutoSync;
 use Yuniq\Ai\Kb\Indexer;
 use Yuniq\Ai\Kb\Repository as KnowledgeBase;
+use Yuniq\Ai\License\License;
 use Yuniq\Ai\LiveSupport\LeadRepository;
 use Yuniq\Ai\LiveSupport\Repository as LiveSupport;
 use Yuniq\Ai\Notifications\Dispatcher;
@@ -143,6 +144,7 @@ final class Plugin {
 			Widget::class,
 			AutoSync::class,
 			Maintenance::class,
+			License::class,
 		);
 
 		if ( is_admin() ) {
@@ -166,6 +168,13 @@ final class Plugin {
 			Settings::class,
 			function () {
 				return new Settings();
+			}
+		);
+
+		$this->container->set(
+			License::class,
+			function () {
+				return new License();
 			}
 		);
 

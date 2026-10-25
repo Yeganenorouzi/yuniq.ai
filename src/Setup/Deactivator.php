@@ -25,5 +25,6 @@ final class Deactivator {
 	public static function deactivate() {
 		wp_clear_scheduled_hook( 'yuniq_ai_scheduled_crawl' );
 		wp_clear_scheduled_hook( 'yuniq_ai_daily_cleanup' );
+		wp_clear_scheduled_hook( 'yuniq_ai_license_check' );
 	}
 }

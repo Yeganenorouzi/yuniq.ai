@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Yuniq.ai
  * Description:       دستیار هوشمند وب‌سایت شما: ویجت شناور گفتگو با هوش مصنوعی، پایگاه دانش خودکار از محتوای سایت، پشتیبانی کامل فارسی و RTL. — Turn any WordPress site into an AI assistant that answers from your own content.
- * Version:           1.6.4
+ * Version:           1.7.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Yegane Norouzi (یگانه نوروزی)
@@ -27,11 +27,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin version. Kept in step with the header above and readme.txt.
  */
-define( 'YUNIQ_AI_VERSION', '1.6.4' );
+define( 'YUNIQ_AI_VERSION', '1.7.0' );
 define( 'YUNIQ_AI_FILE', __FILE__ );
 define( 'YUNIQ_AI_PATH', plugin_dir_path( __FILE__ ) );
 define( 'YUNIQ_AI_URL', plugin_dir_url( __FILE__ ) );
 define( 'YUNIQ_AI_BASENAME', plugin_basename( __FILE__ ) );
+
+/**
+ * Zhaket product token (seller panel). Empty = licensing off (dev builds).
+ * Fill this in only in the build uploaded to Zhaket.
+ */
+if ( ! defined( 'YUNIQ_AI_ZHAKET_PRODUCT_TOKEN' ) ) {
+	define( 'YUNIQ_AI_ZHAKET_PRODUCT_TOKEN', '' );
+}
 
 require_once YUNIQ_AI_PATH . 'src/Autoloader.php';
 Autoloader::register( YUNIQ_AI_PATH . 'src' );
